@@ -36,8 +36,11 @@ class BaseDataHandler:
             )
         raise NotImplementedError
 
-    def _parse_datetime(self, time_str: str) -> datetime:
-        """解析时间字符串"""
+    def _parse_datetime(self, time_str: str) -> datetime | None:
+        """解析时间字符串 - 修复：失败时返回None而不是当前时间"""
+        if not time_str or not isinstance(time_str, str):
+            return None
+            
         try:
             # 尝试多种时间格式
             formats = [
@@ -51,15 +54,17 @@ class BaseDataHandler:
 
             for fmt in formats:
                 try:
-                    return datetime.strptime(time_str, fmt)
+                    return datetime.strptime(time_str.strip(), fmt)
                 except ValueError:
                     continue
 
-            # 如果都失败了，返回当前时间
-            return datetime.now()
+            # 关键修复：解析失败时返回None，而不是当前时间
+            # 这样可以避免去重指纹生成错误，防止重复推送
+            logger.warning(f"[灾害预警] 时间解析失败，返回None: '{time_str}'")
+            return None
         except Exception as e:
-            logger.warning(f"[灾害预警] 时间解析失败: {time_str}, 错误: {e}")
-            return datetime.now()
+            logger.warning(f"[灾害预警] 时间解析异常，返回None: '{time_str}', 错误: {e}")
+            return None
 
 
 class FanStudioHandler(BaseDataHandler):

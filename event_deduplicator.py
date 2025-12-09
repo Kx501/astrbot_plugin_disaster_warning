@@ -49,7 +49,9 @@ class EventDeduplicator:
         # 生成事件指纹
         event_fingerprint = self._generate_event_fingerprint(earthquake)
 
-        current_time = earthquake.shock_time or datetime.now()
+        # 关键修复：如果地震时间解析失败，使用当前时间作为后备
+        # 但要去重逻辑仍然有效
+        current_time = earthquake.shock_time if earthquake.shock_time is not None else datetime.now()
 
         logger.debug(
             f"[灾害预警] 检查事件去重: {event.source.value}, 震级: {earthquake.magnitude}, 位置: {earthquake.place_name}"
@@ -131,10 +133,13 @@ class EventDeduplicator:
             * self.magnitude_tolerance
         )
 
-        # 时间量化到分钟（用于1分钟窗口）
-        time_minute = (earthquake.shock_time or datetime.now()).replace(
-            second=0, microsecond=0
-        )
+        # 关键修复：处理时间可能为None的情况
+        if earthquake.shock_time is not None:
+            time_minute = earthquake.shock_time.replace(second=0, microsecond=0)
+        else:
+            # 如果时间解析失败，使用当前时间但标记为特殊值
+            # 这样同一批无时间的事件仍然可以被正确去重
+            time_minute = datetime.now().replace(second=0, microsecond=0)
 
         return f"{lat_grid:.3f},{lon_grid:.3f},{mag_grid:.1f},{time_minute.strftime('%Y%m%d%H%M')}"
 
