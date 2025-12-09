@@ -2,17 +2,15 @@ import asyncio
 import os
 import sys
 
+# Windows平台WebSocket兼容性修复
+# 解决websockets 12.0+ 在Windows上的ProactorEventLoop兼容性问题
+if sys.platform.startswith("win"):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
 
-# 确保插件目录在Python路径中，支持相对导入
-PLUGIN_DIR = os.path.dirname(__file__)
-if PLUGIN_DIR not in sys.path:
-    sys.path.insert(0, PLUGIN_DIR)
-
-# 注意：此导入必须在路径设置之后，因为需要确保PLUGIN_DIR在sys.path中以支持相对导入
-# 这会导致Ruff的E402警告，但这是目前插件架构的必要设计
 from .disaster_service import get_disaster_service, stop_disaster_service
 
 
