@@ -1,5 +1,4 @@
 import asyncio
-import os
 import sys
 
 # Windows平台WebSocket兼容性修复
@@ -41,8 +40,6 @@ class DisasterWarningPlugin(Star):
             # 启动服务
             self._service_task = asyncio.create_task(self.disaster_service.start())
 
-            logger.info("[灾害预警] 灾害预警插件初始化完成")
-
         except Exception as e:
             logger.error(f"[灾害预警] 插件初始化失败: {e}")
             raise
@@ -75,7 +72,7 @@ class DisasterWarningPlugin(Star):
 
 📋 可用命令：
 • /灾害预警状态 - 查看服务运行状态
-• /灾害预警测试 [群号] [灾害类型] - 测试推送功能
+• /灾害预警测试 [群号] [灾害类型] [格式] - 测试推送功能
 • /灾害预警统计 - 查看推送统计信息
 • /灾害预警配置 查看 - 查看当前配置摘要
 • /灾害预警去重统计 - 查看事件去重统计
@@ -83,6 +80,21 @@ class DisasterWarningPlugin(Star):
 • /灾害预警日志开关 - 开关原始消息日志记录
 • /灾害预警日志清除 - 清除所有原始消息日志
 • /灾害预警帮助 - 显示此帮助信息
+
+🧪 测试功能说明：
+/灾害预警测试 [群号] [灾害类型] [格式]
+• 群号：可选，默认为当前群
+• 灾害类型：earthquake(地震)|tsunami(海啸)|weather(气象)
+• 格式：可选，不同数据源的消息格式
+  - 地震：china(中国格式)|japan(日本格式)|usgs(美国格式)
+  - 海啸：china(中国格式)|japan(日本格式)
+  - 气象：china(中国格式)
+
+📋 测试示例：
+• /灾害预警测试 - 在当前群测试中国地震格式
+• /灾害预警测试 earthquake japan - 测试日本地震格式
+• /灾害预警测试 123456 earthquake usgs - 在群123456测试美国地震格式
+• /灾害预警测试 tsunami japan - 测试日本海啸格式
 
 ⚙️ 配置说明：
 插件支持通过WebUI进行配置，包括：
@@ -93,10 +105,9 @@ class DisasterWarningPlugin(Star):
 • 消息过滤（心跳包、P2P节点状态、重复事件等）
 
 🔧 注意事项：
-• 需要先在WebUI中配置目标QQ群号
-• 插件会自动过滤低于阈值的灾害信息
-• 支持多数据源实时推送
-• 新增智能消息过滤功能，减少日志噪音"""
+• 需要先在WebUI中配置目标群号
+• 插件会自动过滤低于设置阈值的地震信息
+• 原始消息日志记录默认关闭，如需调试请使用 /灾害预警日志开关 开启"""
 
         yield event.plain_result(help_text)
 
@@ -155,8 +166,9 @@ class DisasterWarningPlugin(Star):
         event: AstrMessageEvent,
         target_group: str = None,
         disaster_type: str = None,
+        test_type: str = None,
     ):
-        """测试灾害预警推送功能 - 支持多种灾害类型"""
+        """测试灾害预警推送功能 - 支持多种灾害类型和测试格式"""
         if not self.disaster_service:
             yield event.plain_result("❌ 灾害预警服务未启动")
             return
@@ -164,54 +176,135 @@ class DisasterWarningPlugin(Star):
         try:
             # 解析参数 - 支持多种参数组合
             target_session = None
-            test_type = "earthquake"  # 默认测试地震
+            disaster_test_type = "earthquake"  # 默认测试地震
+            format_test_type = None  # 默认使用推荐格式
 
-            # 参数解析逻辑
-            if target_group and disaster_type:
-                # 两个参数都提供：群号 + 灾害类型
-                target_session = f"aiocqhttp:group:{target_group}"
-                test_type = disaster_type
+            # 中文参数映射
+            type_mapping = {
+                "地震": "earthquake",
+                "海啸": "tsunami",
+                "气象": "weather",
+                "earthquake": "earthquake",
+                "tsunami": "tsunami",
+                "weather": "weather",
+            }
+
+            format_mapping = {
+                "中国": "china",
+                "日本": "japan",
+                "美国": "usgs",
+                "china": "china",
+                "japan": "japan",
+                "usgs": "usgs",
+            }
+
+            # 获取平台名称配置
+            platform_name = self.config.get("platform_name", "aiocqhttp")
+
+            # 辅助函数：判断字符串是否为灾害类型
+            def is_disaster_type(s):
+                return s in type_mapping
+
+            # 辅助函数：判断字符串是否为测试格式
+            def is_format_type(s):
+                return s in format_mapping
+
+            # 参数解析逻辑 - 支持最多3个参数
+            if target_group and disaster_type and test_type:
+                # 三个参数：群号 + 灾害类型 + 测试格式
+                target_session = f"{platform_name}:GroupMessage:{target_group}"
+                disaster_test_type = type_mapping.get(disaster_type, disaster_type)
+                format_test_type = format_mapping.get(test_type, test_type)
+
+            elif target_group and disaster_type:
+                # 两个参数：需要判断第二个是灾害类型还是测试格式
+                if is_disaster_type(disaster_type):
+                    # 情况1: 群号 + 灾害类型 (例如: 123456 earthquake)
+                    target_session = f"{platform_name}:GroupMessage:{target_group}"
+                    disaster_test_type = type_mapping.get(disaster_type)
+                    # test_type 保持 None，使用默认格式
+                elif is_format_type(disaster_type):
+                    # 第二个是格式，需要判断第一个是群号还是灾害类型
+                    if is_disaster_type(target_group):
+                        # 情况2: 灾害类型 + 格式 (例如: earthquake japan) -> 使用当前群
+                        target_session = event.unified_msg_origin
+                        disaster_test_type = type_mapping.get(target_group)
+                        format_test_type = format_mapping.get(disaster_type)
+                    else:
+                        # 情况3: 群号 + 格式 (例如: 123456 japan) -> 默认地震
+                        target_session = f"{platform_name}:GroupMessage:{target_group}"
+                        disaster_test_type = "earthquake"
+                        format_test_type = format_mapping.get(disaster_type)
+                else:
+                    # 其他情况，尝试智能匹配
+                    if is_disaster_type(target_group) and is_format_type(disaster_type):
+                        target_session = event.unified_msg_origin
+                        disaster_test_type = type_mapping.get(target_group)
+                        format_test_type = format_mapping.get(disaster_type)
+                    else:
+                        # 默认处理
+                        target_session = f"{platform_name}:GroupMessage:{target_group}"
+                        disaster_test_type = type_mapping.get(
+                            disaster_type, disaster_type
+                        )
 
             elif target_group:
-                # 只提供一个参数：需要判断是群号还是灾害类型
-                if target_group in ["earthquake", "tsunami", "weather"]:
+                # 只提供一个参数：需要判断是群号还是灾害类型/测试格式
+                if is_disaster_type(target_group):
                     # 是灾害类型，使用当前群
                     target_session = event.unified_msg_origin
-                    test_type = target_group
+                    disaster_test_type = type_mapping.get(target_group)
+                elif is_format_type(target_group):
+                    # 是测试格式，使用当前群，默认地震
+                    target_session = event.unified_msg_origin
+                    disaster_test_type = "earthquake"
+                    format_test_type = format_mapping.get(target_group)
                 else:
                     # 是群号，默认测试地震
-                    target_session = f"aiocqhttp:group:{target_group}"
-                    test_type = "earthquake"
+                    target_session = f"{platform_name}:GroupMessage:{target_group}"
+                    disaster_test_type = "earthquake"
             else:
                 # 没有额外参数：使用当前群，默认测试地震
                 target_session = event.unified_msg_origin
-                test_type = "earthquake"
+                disaster_test_type = "earthquake"
 
             # 验证灾害类型
             valid_types = ["earthquake", "tsunami", "weather"]
-            if test_type not in valid_types:
+            if disaster_test_type not in valid_types:
                 yield event.plain_result(
-                    f"❌ 未知的灾害类型 '{test_type}'\n\n支持的类型：{', '.join(valid_types)}"
+                    f"❌ 未知的灾害类型 '{disaster_test_type}'\n\n支持的类型：地震(earthquake), 海啸(tsunami), 气象(weather)"
                 )
                 return
 
-            # 执行测试
-            logger.info(f"[灾害预警] 开始{test_type}测试推送到 {target_session}")
-            success = await self.disaster_service.test_push(target_session, test_type)
+            # 验证测试格式
+            valid_formats = {
+                "earthquake": ["china", "japan", "usgs"],
+                "tsunami": ["china", "japan"],
+                "weather": ["china"],  # 气象只有中国格式
+            }
 
-            if success:
-                # 获取灾害类型的中文名称
-                type_names = {
-                    "earthquake": "地震预警",
-                    "tsunami": "海啸预警",
-                    "weather": "气象预警",
-                }
-                type_name = type_names.get(test_type, test_type)
-                yield event.plain_result(
-                    f"✅ {type_name}测试推送已发送到 {target_session}"
-                )
+            if format_test_type:
+                allowed_formats = valid_formats.get(disaster_test_type, [])
+                if format_test_type not in allowed_formats:
+                    yield event.plain_result(
+                        f"❌ 灾害类型 '{disaster_test_type}' 不支持测试格式 '{format_test_type}'\n\n"
+                        f"支持的格式：{', '.join(allowed_formats)}"
+                    )
+                    return
+
+            # 执行测试
+            logger.info(
+                f"[灾害预警] 开始{disaster_test_type}测试推送到 {target_session} (格式: {format_test_type or '默认'})"
+            )
+            test_result = await self.disaster_service.test_push(
+                target_session, disaster_test_type, format_test_type
+            )
+
+            if test_result and "✅" in test_result:
+                # 测试成功，直接返回测试结果
+                yield event.plain_result(test_result)
             else:
-                yield event.plain_result("❌ 测试推送失败，请检查日志")
+                yield event.plain_result(test_result or "❌ 测试推送失败，请检查日志")
 
         except Exception as e:
             logger.error(f"[灾害预警] 测试推送失败: {e}")
@@ -272,8 +365,8 @@ class DisasterWarningPlugin(Star):
         enabled = self.config.get("enabled", True)
         summary += f"🔧 插件状态：{'启用' if enabled else '禁用'}\n"
 
-        # 目标群号
-        target_groups = self.config.get("target_qq_groups", [])
+        # 目标群号 - 使用正确的配置键名
+        target_groups = self.config.get("target_groups", [])
         if target_groups:
             summary += f"📢 目标群号：{len(target_groups)} 个\n"
             for group in target_groups[:5]:
@@ -283,7 +376,7 @@ class DisasterWarningPlugin(Star):
         else:
             summary += "📢 目标群号：未配置（将不会进行推送）\n"
 
-        # 数据源 - 适配新的细粒度配置结构
+        # 数据源 - 适配细粒度配置结构
         data_sources = self.config.get("data_sources", {})
         active_sources = []
 
@@ -307,16 +400,38 @@ class DisasterWarningPlugin(Star):
         if len(active_sources) > 5:
             summary += f"  ...等{len(active_sources)}个数据源\n"
 
-        # 阈值设置
-        thresholds = self.config.get("earthquake_thresholds", {})
-        if thresholds:
+        # 阈值设置 - 使用新的配置结构
+        earthquake_filters = self.config.get("earthquake_filters", {})
+        if earthquake_filters:
             summary += "\n📊 阈值设置：\n"
-            if "min_magnitude" in thresholds:
-                summary += f"  • 最小震级：M{thresholds['min_magnitude']}\n"
-            if "min_intensity" in thresholds:
-                summary += f"  • 最小烈度：{thresholds['min_intensity']}\n"
-            if "min_scale" in thresholds:
-                summary += f"  • 最小震度：{thresholds['min_scale']}\n"
+
+            # 烈度过滤器
+            intensity_filter = earthquake_filters.get("intensity_filter", {})
+            if intensity_filter.get("enabled", True):
+                if "min_magnitude" in intensity_filter:
+                    summary += (
+                        f"  • 烈度过滤-最小震级：M{intensity_filter['min_magnitude']}\n"
+                    )
+                if "min_intensity" in intensity_filter:
+                    summary += (
+                        f"  • 烈度过滤-最小烈度：{intensity_filter['min_intensity']}\n"
+                    )
+
+            # 震度过滤器
+            scale_filter = earthquake_filters.get("scale_filter", {})
+            if scale_filter.get("enabled", True):
+                if "min_magnitude" in scale_filter:
+                    summary += (
+                        f"  • 震度过滤-最小震级：M{scale_filter['min_magnitude']}\n"
+                    )
+                if "min_scale" in scale_filter:
+                    summary += f"  • 震度过滤-最小震度：{scale_filter['min_scale']}\n"
+
+            # USGS过滤器
+            magnitude_only_filter = earthquake_filters.get("magnitude_only_filter", {})
+            if magnitude_only_filter.get("enabled", True):
+                if "min_magnitude" in magnitude_only_filter:
+                    summary += f"  • USGS过滤-最小震级：M{magnitude_only_filter['min_magnitude']}\n"
 
         # 推送频率
         freq_control = self.config.get("push_frequency_control", {})
@@ -445,8 +560,8 @@ class DisasterWarningPlugin(Star):
             yield event.plain_result(f"❌ 获取去重统计失败: {str(e)}")
 
     def _format_source_name(self, source_key: str) -> str:
-        """格式化数据源名称 - 新的细粒度配置结构"""
-        # 新的配置格式：service.source (如：fan_studio.china_earthquake_warning)
+        """格式化数据源名称 - 细粒度配置结构"""
+        # 配置格式：service.source (如：fan_studio.china_earthquake_warning)
         service, source = source_key.split(".", 1)
         source_names = {
             "fan_studio": {
