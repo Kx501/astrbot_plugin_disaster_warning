@@ -352,33 +352,33 @@ graph TD
     classDef storage fill:#eceff1,stroke:#455a64,stroke-width:2px,color:#263238;
 
     %% 数据源层
-    subgraph DataSources [🌍 数据源层 (Data Sources)]
+    subgraph DataSources [🌍 数据源层 - Data Sources]
         direction TB
-        FS[FAN Studio<br/>(CEA/CWA/CENC/USGS/Weather/Tsunami)]:::source
-        P2P[P2P Quake<br/>(JMA EEW/Info/Tsunami)]:::source
-        Wolfx[Wolfx<br/>(JMA/CENC/CWA)]:::source
-        GQ[Global Quake<br/>(Global Seismic)]:::source
+        FS[FAN Studio<br/>CEA/CWA/CENC/USGS/Weather/Tsunami]:::source
+        P2P[P2P Quake<br/>JMA EEW/Info/Tsunami]:::source
+        Wolfx[Wolfx<br/>JMA/CENC/CWA]:::source
+        GQ[Global Quake<br/>Global Seismic]:::source
     end
 
     %% 插件核心系统
-    subgraph CoreSystem [⚙️ 插件核心系统 (Core System)]
+    subgraph CoreSystem [⚙️ 插件核心系统 - Core System]
         direction TB
         
         %% 连接与获取层
-        subgraph ConnectionLayer [🔌 连接与获取 (Connection Layer)]
+        subgraph ConnectionLayer [🔌 连接与获取 - Connection Layer]
             WSM[WebSocket Manager<br/>连接管理/自动重连/心跳保活]:::connection
             HTTP[HTTP Fetcher<br/>定时轮询获取]:::connection
             TCP[TCP Client<br/>Global Quake 专用连接]:::connection
         end
 
         %% 服务控制层
-        subgraph ServiceLayer [🎮 服务控制 (Service Layer)]
+        subgraph ServiceLayer [🎮 服务控制 - Service Layer]
             DWS[DisasterWarningService<br/>核心服务协调器]:::service
             Logger[Message Logger<br/>原始消息记录/过滤/统计]:::service
         end
 
         %% 数据处理层
-        subgraph ProcessingLayer [🧠 数据处理 (Processing Layer)]
+        subgraph ProcessingLayer [🧠 数据处理 - Processing Layer]
             Handlers[Data Handlers<br/>多源数据解析器工厂]:::logic
             
             subgraph Parsers [具体解析器]
@@ -389,16 +389,16 @@ graph TD
                 Other_H[Weather/Tsunami Handlers]:::logic
             end
             
-            Model[DisasterEvent Model<br/>统一事件模型 (Earthquake/Tsunami/Weather)]:::logic
+            Model[DisasterEvent Model<br/>统一事件模型 - Earthquake/Tsunami/Weather]:::logic
         end
 
         %% 消息管理层
-        subgraph ManagerLayer [🛡️ 消息管理 (Manager Layer)]
+        subgraph ManagerLayer [🛡️ 消息管理 - Manager Layer]
             MPM[MessagePushManager<br/>消息推送决策中心]:::logic
             
             subgraph Filters [智能过滤系统]
                 direction TB
-                Dedupe[EventDeduplicator<br/>多源事件去重 (时间/位置/震级)]:::logic
+                Dedupe[EventDeduplicator<br/>多源事件去重 - 时间/位置/震级]:::logic
                 Thres[Threshold Filters<br/>烈度/震级/震度阈值过滤]:::logic
                 Freq[ReportController<br/>EEW报数频率控制]:::logic
             end
@@ -408,13 +408,13 @@ graph TD
     end
 
     %% 存储层
-    subgraph StorageLayer [💾 存储层 (Storage)]
+    subgraph StorageLayer [💾 存储层 - Storage]
         LogFile[Raw Messages Log<br/>原始消息日志]:::storage
         Config[Plugin Config<br/>配置文件]:::storage
     end
 
     %% 输出层
-    subgraph OutputLayer [🚀 输出层 (Output)]
+    subgraph OutputLayer [🚀 输出层 - Output]
         AstrBot[AstrBot Context<br/>消息发送接口]:::output
         User[用户/群组<br/>QQ/Telegram/钉钉等]:::output
     end
