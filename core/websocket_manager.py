@@ -5,11 +5,20 @@ WebSocket连接管理器
 
 import asyncio
 import traceback
+import socket
 from collections.abc import Callable
 from typing import Any
 
 import aiohttp
 import websockets
+from websockets.exceptions import (
+    ConnectionClosed,
+    ConnectionClosedError,
+    ConnectionClosedOK,
+    InvalidHandshake,
+    InvalidURI,
+    ProtocolError,
+)
 
 from astrbot.api import logger
 
@@ -56,10 +65,6 @@ class WebSocketManager:
             if is_retry:
                 current_retry = self.connection_retry_counts.get(name, 0) + 1
                 self.connection_retry_counts[name] = current_retry
-                max_retries = self.config.get("max_reconnect_retries", 3)
-                logger.info(
-                    f"[灾害预警] 尝试重连 {name} (尝试 {current_retry}/{max_retries})"
-                )
             else:
                 logger.info(f"[灾害预警] 正在连接 {name}: {uri}")
                 # 首次连接时重置重试计数
@@ -91,91 +96,99 @@ class WebSocketManager:
                 # 连接成功，重置重试计数
                 self.connection_retry_counts[name] = 0
 
-                # 处理消息
-                async for message in websocket:
-                    try:
-                        # 记录原始消息 - 适配消息记录器
-                        if self.message_logger:
-                            try:
-                                # 尝试使用消息记录器格式
-                                self.message_logger.log_raw_message(
-                                    source=f"websocket_{name}",
-                                    message_type="websocket_message",
-                                    raw_data=message,
-                                    connection_info={
-                                        "url": uri,
-                                        "connection_type": "websocket",
-                                        "handler": self._get_handler_name_for_connection(
-                                            name
-                                        ),
-                                        **self.connection_info[name],
-                                    },
+                try:
+                    # 处理消息
+                    async for message in websocket:
+                        try:
+                            # 记录原始消息
+                            if self.message_logger:
+                                self._log_message(name, message, uri)
+
+                            # 智能处理器查找（支持前缀匹配）
+                            handler_name = self._find_handler_by_prefix(name)
+
+                            if handler_name:
+                                # 增强：传递更多连接信息给处理器
+                                await self.message_handlers[handler_name](
+                                    message,
+                                    connection_name=name,
+                                    connection_info=self.connection_info[name],
                                 )
-                            except (TypeError, AttributeError):
-                                # 向后兼容：旧的消息记录器格式
-                                try:
-                                    self.message_logger.log_websocket_message(
-                                        name, message, uri
-                                    )
-                                except Exception as e:
-                                    logger.warning(f"[灾害预警] 消息记录失败: {e}")
+                            else:
+                                logger.warning(
+                                    f"[灾害预警] 未找到消息处理器 - 连接: {name}"
+                                )
+                        except Exception as e:
+                            # 消息处理层面的错误不应导致连接断开
+                            logger.error(f"[灾害预警] 消息处理错误 {name}: {e}")
+                            logger.debug(f"[灾害预警] 异常堆栈: {traceback.format_exc()}")
+                
+                except ConnectionClosedOK:
+                    logger.info(f"[灾害预警] 连接正常关闭: {name}")
+                    return  # 正常关闭不重连
+                
+                except ConnectionClosedError as e:
+                    logger.warning(f"[灾害预警] 连接异常断开 {name}: code={e.code}, reason={e.reason}")
+                    raise  # 抛出以触发外部重连逻辑
 
-                        # 智能处理器查找（支持前缀匹配）
-                        handler_name = self._find_handler_by_prefix(name)
+        except (InvalidHandshake, InvalidURI, ProtocolError) as e:
+            logger.error(f"[灾害预警] 协议或配置错误 {name}: {e}")
+            # 这些错误通常是配置问题，可能不需要立即重连，或者需要更长的延迟
+            # 但为了保持鲁棒性，目前还是会尝试重连
+            self._handle_connection_error(name, uri, headers, e)
 
-                        if handler_name:
-                            # 增强：传递更多连接信息给处理器
-                            await self.message_handlers[handler_name](
-                                message,
-                                connection_name=name,
-                                connection_info=self.connection_info[name],
-                            )
-                        else:
-                            logger.warning(
-                                f"[灾害预警] 未找到消息处理器 - 连接: {name}"
-                            )
-                    except Exception as e:
-                        logger.error(f"[灾害预警] 处理消息时出错 {name}: {e}")
-                        logger.error(f"[灾害预警] 异常堆栈: {traceback.format_exc()}")
+        except (asyncio.TimeoutError, socket.timeout) as e:
+            logger.warning(f"[灾害预警] 连接超时 {name}")
+            self._handle_connection_error(name, uri, headers, e)
 
-                        # 增强的错误处理：根据错误类型决定是否重连
-                        if self._should_reconnect_on_error(e):
-                            await self._schedule_reconnect(name, uri, headers)
+        except (ConnectionRefusedError, OSError) as e:
+            logger.warning(f"[灾害预警] 网络错误 {name}: {e}")
+            self._handle_connection_error(name, uri, headers, e)
+
+        except ConnectionClosed as e:
+            logger.warning(f"[灾害预警] 连接关闭 {name}: {e}")
+            self._handle_connection_error(name, uri, headers, e)
 
         except Exception as e:
-            # 增强的错误分析和日志
-            error_msg = str(e)
-            error_type = type(e).__name__
+            logger.error(f"[灾害预警] 未知连接错误 {name}: {type(e).__name__} - {e}")
+            logger.debug(f"[灾害预警] 异常堆栈: {traceback.format_exc()}")
+            self._handle_connection_error(name, uri, headers, e)
 
-            # 记录详细的错误信息
-            logger.error(f"[灾害预警] 连接失败 {name}: {error_type} - {error_msg}")
+    def _log_message(self, name: str, message: Any, uri: str):
+        """记录消息辅助方法"""
+        try:
+            # 尝试使用消息记录器格式
+            self.message_logger.log_raw_message(
+                source=f"websocket_{name}",
+                message_type="websocket_message",
+                raw_data=message,
+                connection_info={
+                    "url": uri,
+                    "connection_type": "websocket",
+                    "handler": self._get_handler_name_for_connection(name),
+                    **self.connection_info.get(name, {}),
+                },
+            )
+        except (TypeError, AttributeError):
+            # 向后兼容：旧的消息记录器格式
+            try:
+                self.message_logger.log_websocket_message(name, message, uri)
+            except Exception as e:
+                logger.warning(f"[灾害预警] 消息记录失败: {e}")
 
-            # 分类处理不同类型的错误
-            if "1012" in error_msg and "service restart" in error_msg:
-                logger.warning(f"[灾害预警] 收到服务重启通知 {name}")
-                logger.info(f"[灾害预警] {name} 服务器正在重启，将在稍后自动重连")
-            elif "HTTP 502" in error_msg or "HTTP 503" in error_msg:
-                logger.warning(f"[灾害预警] 服务器网关错误 {name}")
-                logger.info(f"[灾害预警] {name} 服务器可能正在维护")
-            elif "connection refused" in error_msg.lower():
-                logger.warning(f"[灾害预警] 连接被拒绝 {name}")
-                logger.info(f"[灾害预警] {name} 服务器可能暂时不可用")
-            elif "timeout" in error_msg.lower():
-                logger.warning(f"[灾害预警] 连接超时 {name}")
-                logger.info(f"[灾害预警] {name} 连接超时，将稍后重试")
-            elif "ssl" in error_msg.lower() or "certificate" in error_msg.lower():
-                logger.warning(f"[灾害预警] SSL证书问题 {name}")
-                logger.info("[灾害预警] 请检查SSL配置或服务器证书")
+    def _handle_connection_error(self, name: str, uri: str, headers: dict | None, error: Exception):
+        """统一处理连接错误"""
+        # 清理连接信息
+        self.connections.pop(name, None)
+        self.connection_info.pop(name, None)
+
+        # 启动重连任务
+        if self.running:
+            # 检查是否应该重连
+            if self._should_reconnect_on_error(error):
+                asyncio.create_task(self._schedule_reconnect(name, uri, headers))
             else:
-                logger.error(f"[灾害预警] 未知错误 {name}: {error_msg}")
-
-            # 清理连接信息
-            self.connections.pop(name, None)
-            self.connection_info.pop(name, None)
-
-            # 启动重连任务
-            if self.running:
-                await self._schedule_reconnect(name, uri, headers)
+                logger.warning(f"[灾害预警] {name} 遇到不可恢复错误，停止重连")
 
     def _should_reconnect_on_error(self, error: Exception) -> bool:
         """判断遇到错误时是否应该重连"""
@@ -229,52 +242,55 @@ class WebSocketManager:
     async def _schedule_reconnect(
         self, name: str, uri: str, headers: dict | None = None
     ):
-        """计划重连 - 增强版本，支持备用服务器"""
+        """计划重连 - 优化版本，基于配置的固定间隔"""
         if name in self.reconnect_tasks:
             self.reconnect_tasks[name].cancel()
 
         async def reconnect():
-            # 获取当前重试次数和最大重试次数
-            current_retry = self.connection_retry_counts.get(name, 0)
+            # 获取重连配置
             max_retries = self.config.get("max_reconnect_retries", 3)
+            reconnect_interval = self.config.get("reconnect_interval", 10)
+            
+            # 获取当前重试次数
+            current_retry = self.connection_retry_counts.get(name, 0)
 
             # 检查是否已达到最大重试次数
-            if current_retry >= max_retries * 2:  # 主备服务器各尝试max_retries次
+            # 如果配置了备用服务器，总次数为主备各 max_retries 次
+            has_backup = name in self.connection_info and self.connection_info[name].get("backup_url")
+            total_max_retries = max_retries * 2 if has_backup else max_retries
+
+            if current_retry >= total_max_retries:
                 logger.error(
-                    f"[灾害预警] {name} 重连失败，主备服务器均已达到最大重试次数，将停止重连"
+                    f"[灾害预警] {name} 重连失败，已达到最大重试次数 ({total_max_retries})，停止重连"
                 )
                 return
 
-            # 获取备用服务器URL
-            backup_url = None
-            if name in self.connection_info:
+            # 确定目标服务器 URI
+            target_uri = uri
+            server_type = "主服务器"
+            
+            # 如果有备用服务器且重试次数超过一半，切换到备用服务器
+            if has_backup and current_retry >= max_retries:
                 backup_url = self.connection_info[name].get("backup_url")
+                if backup_url:
+                    target_uri = backup_url
+                    server_type = "备用服务器"
 
-            # 判断使用主服务器还是备用服务器
-            # 每尝试 max_retries 次后切换服务器
-            use_backup = backup_url and (current_retry >= max_retries)
-            target_uri = backup_url if use_backup else uri
-
-            # 计算重试次数（在当前服务器上的尝试次数）
-            server_retry_count = current_retry % max_retries if use_backup else current_retry
-
-            # 固定5秒等待后重试
-            delay = 5
-
-            server_type = "备用服务器" if use_backup else "主服务器"
             logger.info(
-                f"[灾害预警] {name} 将在 {delay} 秒后尝试连接{server_type}: {target_uri}"
+                f"[灾害预警] {name} 将在 {reconnect_interval} 秒后尝试重连{server_type} ({current_retry + 1}/{total_max_retries})"
             )
 
             try:
-                await asyncio.sleep(delay)
+                await asyncio.sleep(reconnect_interval)
                 # 标记为重试连接
                 await self.connect(name, target_uri, headers, is_retry=True)
             except Exception as e:
-                logger.error(f"[灾害预警] WebSocket管理器重连失败 {name}: {e}")
-                # 如果还有重试次数，继续安排重连（回到主服务器URI以便下次判断）
-                if self.connection_retry_counts.get(name, 0) < max_retries * 2:
-                    await self._schedule_reconnect(name, uri, headers)
+                logger.error(f"[灾害预警] WebSocket管理器重连执行失败 {name}: {e}")
+                # 只有在连接过程中抛出未捕获异常导致 connect 方法提前退出时，才需要在这里递归调用
+                # 正常情况下 connect 内部捕获异常后会调用 _schedule_reconnect
+                # 为防止死循环，这里仅在 connect 完全失败且未触发内部重连逻辑时兜底
+                # 但由于 connect 内部有全面的 try-except，这里通常不会执行到
+                pass
 
         self.reconnect_tasks[name] = asyncio.create_task(reconnect())
 
