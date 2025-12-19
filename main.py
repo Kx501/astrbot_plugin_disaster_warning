@@ -574,7 +574,6 @@ class DisasterWarningPlugin(Star):
                 "taiwan_cwa_earthquake": "台湾中央气象署强震即时警报",
                 "china_cenc_earthquake": "中国地震台网地震测定",
                 "japan_jma_eew": "日本气象厅紧急地震速报",
-                "japan_jma_earthquake": "日本气象厅地震情报",
                 "usgs_earthquake": "USGS地震测定",
                 "china_weather_alarm": "中国气象局气象预警",
                 "china_tsunami": "自然资源部海啸预警",
