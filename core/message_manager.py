@@ -75,8 +75,10 @@ class ScaleFilter:
     def should_filter(self, earthquake: EarthquakeData) -> bool:
         """判断是否过滤该地震事件"""
         # 检查震级
+        # 特殊处理：如果震级为-1.0（通常表示未知或调查中），则跳过震级过滤，仅依赖震度过滤
         if (
             earthquake.magnitude is not None
+            and earthquake.magnitude != -1.0
             and earthquake.magnitude < self.min_magnitude
         ):
             logger.debug(
@@ -217,6 +219,7 @@ class ReportCountController:
             DataSource.WOLFX_CENC_EEW.value: "cea_wolfx",
             DataSource.FAN_STUDIO_CWA.value: "cwa_fanstudio",
             DataSource.WOLFX_CWA_EEW.value: "cwa_wolfx",
+            DataSource.FAN_STUDIO_JMA.value: "jma_fanstudio",
             DataSource.P2P_EEW.value: "jma_p2p",
             DataSource.WOLFX_JMA_EEW.value: "jma_wolfx",
             DataSource.GLOBAL_QUAKE.value: "global_quake",
@@ -298,6 +301,11 @@ class EventDeduplicator:
             # 不同数据源，允许推送（允许多数据源推送同一事件）
             logger.info(f"[灾害预警] 不同数据源，允许推送: {event.source.value}")
             current_report = getattr(earthquake, "updates", 1)
+            # 提取JMA issue_type
+            issue_type = ""
+            if hasattr(earthquake, "raw_data") and isinstance(earthquake.raw_data, dict):
+                issue_type = earthquake.raw_data.get("issue", {}).get("type", "")
+            
             self.recent_events[event_fingerprint][source_id] = {
                 "timestamp": current_time,
                 "source": event.source.value,
@@ -305,6 +313,7 @@ class EventDeduplicator:
                 "longitude": earthquake.longitude or 0,
                 "magnitude": earthquake.magnitude or 0,
                 "info_type": earthquake.info_type or "",
+                "issue_type": issue_type,  # 保存JMA issue type
                 "processed_reports": {current_report},  # 使用集合存储已处理的报数
                 "is_final": getattr(earthquake, "is_final", False),
             }
@@ -312,6 +321,12 @@ class EventDeduplicator:
 
         # 新事件，记录并允许推送
         current_report = getattr(earthquake, "updates", 1)
+        
+        # 提取JMA issue_type
+        issue_type = ""
+        if hasattr(earthquake, "raw_data") and isinstance(earthquake.raw_data, dict):
+            issue_type = earthquake.raw_data.get("issue", {}).get("type", "")
+
         self.recent_events[event_fingerprint] = {
             source_id: {
                 "timestamp": current_time,
@@ -320,6 +335,7 @@ class EventDeduplicator:
                 "longitude": earthquake.longitude or 0,
                 "magnitude": earthquake.magnitude or 0,
                 "info_type": earthquake.info_type or "",
+                "issue_type": issue_type,  # 保存JMA issue type
                 "processed_reports": {current_report},  # 使用集合存储已处理的报数
                 "is_final": getattr(earthquake, "is_final", False),
             }
@@ -393,6 +409,30 @@ class EventDeduplicator:
                 logger.debug("[灾害预警] 允许USGS状态升级: automatic -> reviewed")
                 return True
 
+        # JMA地震情报状态升级检测
+        # 优先级: 震度速报 < 震源相关情报 < 震源・震度情报 < 各地震度相关情报
+        # 对应的 issue type: ScalePrompt < Destination < ScaleAndDestination < DetailScale
+        jma_types = ["ScalePrompt", "Destination", "ScaleAndDestination", "DetailScale"]
+        
+        # 获取当前的 issue type
+        current_issue_type = ""
+        if hasattr(current_earthquake, "raw_data") and isinstance(current_earthquake.raw_data, dict):
+             current_issue_type = current_earthquake.raw_data.get("issue", {}).get("type", "")
+        
+        # 获取已存在的 issue type
+        existing_issue_type = existing_event.get("issue_type", "")
+        
+        if current_issue_type in jma_types and existing_issue_type in jma_types:
+            try:
+                curr_idx = jma_types.index(current_issue_type)
+                prev_idx = jma_types.index(existing_issue_type)
+                # 只有状态升级（索引变大）时才允许更新
+                if curr_idx > prev_idx:
+                    logger.info(f"[灾害预警] 允许JMA情报升级: {existing_issue_type} -> {current_issue_type}")
+                    return True
+            except ValueError:
+                pass
+
         # 通用状态升级（针对CENC等）
         current_info_type = (current_earthquake.info_type or "").lower()
         existing_info_type = (existing_event.get("info_type", "") or "").lower()
@@ -414,6 +454,7 @@ class EventDeduplicator:
             DataSource.WOLFX_CENC_EEW.value: "cea_wolfx",
             DataSource.FAN_STUDIO_CWA.value: "cwa_fanstudio",
             DataSource.WOLFX_CWA_EEW.value: "cwa_wolfx",
+            DataSource.FAN_STUDIO_JMA.value: "jma_fanstudio",
             DataSource.P2P_EEW.value: "jma_p2p",
             DataSource.P2P_EARTHQUAKE.value: "jma_p2p_info",
             DataSource.WOLFX_JMA_EEW.value: "jma_wolfx",
@@ -574,7 +615,8 @@ class MessagePushManager:
         # 保存计算结果供消息构建使用
         event.raw_data["local_estimation"] = {
             "distance": distance,
-            "intensity": intensity
+            "intensity": intensity,
+            "place_name": self.local_monitor.place_name
         }
 
         return True
@@ -597,6 +639,7 @@ class MessagePushManager:
             DataSource.WOLFX_CENC_EEW.value: "cea_wolfx",
             DataSource.FAN_STUDIO_CWA.value: "cwa_fanstudio",
             DataSource.WOLFX_CWA_EEW.value: "cwa_wolfx",
+            DataSource.FAN_STUDIO_JMA.value: "jma_fanstudio",
             DataSource.P2P_EEW.value: "jma_p2p",
             DataSource.WOLFX_JMA_EEW.value: "jma_wolfx",
             # 地震情报数据源
@@ -669,9 +712,10 @@ class MessagePushManager:
         include_map = message_format_config.get("include_map", True)
         map_provider = message_format_config.get("map_provider", "baidu")
         map_zoom_level = message_format_config.get("map_zoom_level", 5)
+        detailed_jma = message_format_config.get("detailed_jma_intensity", False)
 
         logger.debug(
-            f"[灾害预警] 地图配置: provider={map_provider}, zoom={map_zoom_level}"
+            f"[灾害预警] 消息配置: provider={map_provider}, zoom={map_zoom_level}, detailed_jma={detailed_jma}"
         )
 
         if isinstance(event.data, WeatherAlarmData):
@@ -679,30 +723,18 @@ class MessagePushManager:
         elif isinstance(event.data, TsunamiData):
             message_text = format_tsunami_message(source_id, event.data)
         elif isinstance(event.data, EarthquakeData):
-            message_text = format_earthquake_message(source_id, event.data)
+            # 传递配置选项
+            options = {"detailed_jma_intensity": detailed_jma}
+            message_text = format_earthquake_message(source_id, event.data, options)
         else:
             # 未知事件类型，使用基础格式化
             logger.warning(f"[灾害预警] 未知事件类型: {type(event.data)}")
             message_text = f"🚨[未知事件]\n📋事件ID：{event.id}\n⏰时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
 
-        # 添加本地预估信息
-        if isinstance(event.data, EarthquakeData) and self.local_monitor.enabled:
-            local_est = event.raw_data.get("local_estimation")
-            if local_est:
-                dist = local_est["distance"]
-                inte = local_est["intensity"]
-                
-                # 只要有计算结果就显示，即使是0
-                desc, _ = IntensityCalculator.get_intensity_description(inte)
-                place = self.local_monitor.place_name
-                message_text += f"\n\n📍 {place}预估：\n据震中 {dist:.1f}km，预估烈度 {inte:.1f}级 ({desc})"
-
         # 构建消息链
         if include_map and isinstance(event.data, EarthquakeData):
             if event.data.latitude is not None and event.data.longitude is not None:
                 # 使用消息格式化器中的优化地图链接生成
-                from ..utils.message_formatters import BaseMessageFormatter
-
                 map_url = BaseMessageFormatter.get_map_link(
                     event.data.latitude,
                     event.data.longitude,
