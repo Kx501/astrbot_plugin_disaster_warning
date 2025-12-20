@@ -7,9 +7,9 @@ import json
 import re
 import time
 import traceback
+from collections import deque
 from datetime import datetime
 from typing import Any
-from collections import deque
 
 from astrbot.api import logger
 
@@ -1203,12 +1203,12 @@ class USGSEarthquakeHandler(BaseDataHandler):
             # 🌏 FE Regions 中文翻译
             # 将 USGS 英文地名翻译为中文（基于 F-E 地震区划）
             usgs_place_name = translate_place_name(
-                usgs_place_name_en, 
-                usgs_latitude, 
+                usgs_place_name_en,
+                usgs_latitude,
                 usgs_longitude,
-                fallback_to_original=True  # 翻译失败时保留英文
+                fallback_to_original=True,  # 翻译失败时保留英文
             )
-            
+
             # 记录翻译结果（仅在翻译成功时）
             if usgs_place_name != usgs_place_name_en:
                 logger.debug(
@@ -1279,7 +1279,9 @@ class ChinaWeatherHandler(BaseDataHandler):
             # 去重检查
             weather_id = msg_data.get("id")
             if weather_id and weather_id in self._processed_weather_ids:
-                logger.info(f"[灾害预警] {self.source_id} 检测到重复的气象预警ID: {weather_id}，忽略")
+                logger.info(
+                    f"[灾害预警] {self.source_id} 检测到重复的气象预警ID: {weather_id}，忽略"
+                )
                 return None
 
             # 检查关键字段

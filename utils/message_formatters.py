@@ -6,9 +6,9 @@
 from datetime import datetime
 from typing import Any
 
+from ..core.intensity_calculator import IntensityCalculator
 from ..models.data_source_config import get_data_source_config
 from ..models.models import EarthquakeData, TsunamiData, WeatherAlarmData
-from ..core.intensity_calculator import IntensityCalculator
 
 
 class BaseMessageFormatter:
@@ -136,10 +136,12 @@ class CEAEEWFormatter(BaseMessageFormatter):
                 inte = local_est.get("intensity", 0.0)
                 place = local_est.get("place_name", "本地")
                 desc = IntensityCalculator.get_intensity_description(inte)
-                
+
                 lines.append("")
                 lines.append(f"📍{place}预估：")
-                lines.append(f"距离震中 {dist:.1f} km，预估最大烈度 {inte:.1f} ({desc})")
+                lines.append(
+                    f"距离震中 {dist:.1f} km，预估最大烈度 {inte:.1f} ({desc})"
+                )
 
         return "\n".join(lines)
 
@@ -197,10 +199,12 @@ class CWAEEWFormatter(BaseMessageFormatter):
                 inte = local_est.get("intensity", 0.0)
                 place = local_est.get("place_name", "本地")
                 desc = IntensityCalculator.get_intensity_description(inte)
-                
+
                 lines.append("")
                 lines.append(f"📍{place}预估：")
-                lines.append(f"距离震中 {dist:.1f} km，预估最大烈度 {inte:.1f} ({desc})")
+                lines.append(
+                    f"距离震中 {dist:.1f} km，预估最大烈度 {inte:.1f} ({desc})"
+                )
 
         return "\n".join(lines)
 
@@ -217,7 +221,7 @@ class JMAEEWFormatter(BaseMessageFormatter):
 
         # 判断是予报还是警报
         warning_type = "予报"  # 默认
-        
+
         # 优先使用info_type (Fan Studio)
         if earthquake.info_type:
             warning_type = earthquake.info_type
@@ -298,10 +302,12 @@ class JMAEEWFormatter(BaseMessageFormatter):
                 inte = local_est.get("intensity", 0.0)
                 place = local_est.get("place_name", "本地")
                 desc = IntensityCalculator.get_intensity_description(inte)
-                
+
                 lines.append("")
                 lines.append(f"📍{place}预估：")
-                lines.append(f"距离震中 {dist:.1f} km，预估最大烈度 {inte:.1f} ({desc})")
+                lines.append(
+                    f"距离震中 {dist:.1f} km，预估最大烈度 {inte:.1f} ({desc})"
+                )
 
         return "\n".join(lines)
 
@@ -423,7 +429,7 @@ class JMAEarthquakeFormatter(BaseMessageFormatter):
         """格式化日本气象厅地震情报消息"""
         if options is None:
             options = {}
-        
+
         info_type = JMAEarthquakeFormatter.determine_info_type(earthquake)
         lines = [f"🚨[{info_type}] 日本气象厅"]
 
@@ -495,31 +501,35 @@ class JMAEarthquakeFormatter(BaseMessageFormatter):
                 # 震度显示辅助函数
                 def get_scale_disp(scale_val):
                     disp = str(scale_val / 10).replace(".0", "")
-                    if scale_val == 45: return "5弱"
-                    elif scale_val == 50: return "5强"
-                    elif scale_val == 55: return "6弱"
-                    elif scale_val == 60: return "6强"
+                    if scale_val == 45:
+                        return "5弱"
+                    elif scale_val == 50:
+                        return "5强"
+                    elif scale_val == 55:
+                        return "6弱"
+                    elif scale_val == 60:
+                        return "6强"
                     return disp
 
                 if options.get("detailed_jma_intensity", False):
                     # 详细模式：显示所有震度级别（从大到小）
                     sorted_scales = sorted(scale_groups.keys(), reverse=True)
                     lines.append("📡各地震度详情：")
-                    
+
                     for scale_key in sorted_scales:
                         scale_disp = get_scale_disp(scale_key)
                         locs = scale_groups[scale_key]
-                        
+
                         # 如果地点太多，分行显示或截断（避免消息过长）
                         # 详细模式下，我们尝试显示更多，但为了QQ消息限制，还是限制一下每级显示数量
                         # 例如每级最多显示20个
                         max_show = 20
                         locs_to_show = locs[:max_show]
-                        
+
                         loc_str = "、".join(locs_to_show)
                         if len(locs) > max_show:
                             loc_str += f" 等{len(locs)}处"
-                            
+
                         lines.append(f"  [震度{scale_disp}] {loc_str}")
                 else:
                     # 默认模式：只显示最大震度区域
@@ -895,7 +905,9 @@ def get_formatter(source_id: str):
     return MESSAGE_FORMATTERS.get(source_id, BaseMessageFormatter)
 
 
-def format_earthquake_message(source_id: str, earthquake: EarthquakeData, options: dict = None) -> str:
+def format_earthquake_message(
+    source_id: str, earthquake: EarthquakeData, options: dict = None
+) -> str:
     """格式化地震消息"""
     formatter_class = get_formatter(source_id)
     if hasattr(formatter_class, "format_message"):

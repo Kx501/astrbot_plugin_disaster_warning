@@ -5,7 +5,6 @@ WebSocket连接管理器
 
 import asyncio
 import traceback
-import socket
 from collections.abc import Callable
 from typing import Any
 
@@ -121,14 +120,18 @@ class WebSocketManager:
                         except Exception as e:
                             # 消息处理层面的错误不应导致连接断开
                             logger.error(f"[灾害预警] 消息处理错误 {name}: {e}")
-                            logger.debug(f"[灾害预警] 异常堆栈: {traceback.format_exc()}")
-                
+                            logger.debug(
+                                f"[灾害预警] 异常堆栈: {traceback.format_exc()}"
+                            )
+
                 except ConnectionClosedOK:
                     logger.info(f"[灾害预警] 连接正常关闭: {name}")
                     return  # 正常关闭不重连
-                
+
                 except ConnectionClosedError as e:
-                    logger.warning(f"[灾害预警] 连接异常断开 {name}: code={e.code}, reason={e.reason}")
+                    logger.warning(
+                        f"[灾害预警] 连接异常断开 {name}: code={e.code}, reason={e.reason}"
+                    )
                     raise  # 抛出以触发外部重连逻辑
 
         except (InvalidHandshake, InvalidURI, ProtocolError) as e:
@@ -137,7 +140,7 @@ class WebSocketManager:
             # 但为了保持鲁棒性，目前还是会尝试重连
             self._handle_connection_error(name, uri, headers, e)
 
-        except (asyncio.TimeoutError, socket.timeout) as e:
+        except (TimeoutError, asyncio.TimeoutError) as e:
             logger.warning(f"[灾害预警] 连接超时 {name}")
             self._handle_connection_error(name, uri, headers, e)
 
@@ -176,7 +179,9 @@ class WebSocketManager:
             except Exception as e:
                 logger.warning(f"[灾害预警] 消息记录失败: {e}")
 
-    def _handle_connection_error(self, name: str, uri: str, headers: dict | None, error: Exception):
+    def _handle_connection_error(
+        self, name: str, uri: str, headers: dict | None, error: Exception
+    ):
         """统一处理连接错误"""
         # 清理连接信息
         self.connections.pop(name, None)
@@ -250,13 +255,15 @@ class WebSocketManager:
             # 获取重连配置
             max_retries = self.config.get("max_reconnect_retries", 3)
             reconnect_interval = self.config.get("reconnect_interval", 10)
-            
+
             # 获取当前重试次数
             current_retry = self.connection_retry_counts.get(name, 0)
 
             # 检查是否已达到最大重试次数
             # 如果配置了备用服务器，总次数为主备各 max_retries 次
-            has_backup = name in self.connection_info and self.connection_info[name].get("backup_url")
+            has_backup = name in self.connection_info and self.connection_info[
+                name
+            ].get("backup_url")
             total_max_retries = max_retries * 2 if has_backup else max_retries
 
             if current_retry >= total_max_retries:
@@ -268,7 +275,7 @@ class WebSocketManager:
             # 确定目标服务器 URI
             target_uri = uri
             server_type = "主服务器"
-            
+
             # 如果有备用服务器且重试次数超过一半，切换到备用服务器
             if has_backup and current_retry >= max_retries:
                 backup_url = self.connection_info[name].get("backup_url")
@@ -293,7 +300,6 @@ class WebSocketManager:
                 pass
 
         self.reconnect_tasks[name] = asyncio.create_task(reconnect())
-
 
     async def disconnect(self, name: str):
         """断开连接 - 增强版本"""
@@ -452,11 +458,14 @@ class GlobalQuakeClient:
         self.message_logger = message_logger
 
         # 服务器配置
-        self.primary_server = config.get("primary_server", "server-backup.globalquake.net")
-        self.secondary_server = config.get("secondary_server", "server-backup.globalquake.net")
+        self.primary_server = config.get(
+            "primary_server", "server-backup.globalquake.net"
+        )
+        self.secondary_server = config.get(
+            "secondary_server", "server-backup.globalquake.net"
+        )
         self.primary_port = config.get("primary_port", 38000)
         self.secondary_port = config.get("secondary_port", 38000)
-
 
         self.reader: asyncio.StreamReader | None = None
         self.writer: asyncio.StreamWriter | None = None

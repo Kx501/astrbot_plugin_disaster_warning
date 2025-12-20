@@ -11,8 +11,6 @@ from typing import Any
 
 from astrbot.api import logger
 
-from .message_logger import MessageLogger
-from .message_manager import MessagePushManager
 from ..models.models import (
     DataSource,
     DisasterEvent,
@@ -21,6 +19,9 @@ from ..models.models import (
     TsunamiData,
     WeatherAlarmData,
 )
+from .data_handlers import DATA_HANDLERS
+from .message_logger import MessageLogger
+from .message_manager import MessagePushManager
 from .websocket_manager import GlobalQuakeClient, HTTPDataFetcher, WebSocketManager
 
 
@@ -55,8 +56,6 @@ class DisasterWarningService:
 
     def _initialize_handlers(self):
         """初始化数据处理器"""
-        from .data_handlers import DATA_HANDLERS
-
         for source_id, handler_class in DATA_HANDLERS.items():
             self.handlers[source_id] = handler_class(self.message_logger)
 
@@ -516,7 +515,6 @@ class DisasterWarningService:
                     "handler": "fan_studio",
                 }
 
-
         # P2P连接配置
         p2p_config = data_sources.get("p2p_earthquake", {})
         if isinstance(p2p_config, dict) and p2p_config.get("enabled", True):
@@ -641,13 +639,16 @@ class DisasterWarningService:
                     )
                 )
                 self.connection_tasks.append(task)
-                
+
                 # 日志中显示备用服务器信息
-                backup_info = f", 备用: {conn_config.get('backup_url')}" if conn_config.get('backup_url') else ""
+                backup_info = (
+                    f", 备用: {conn_config.get('backup_url')}"
+                    if conn_config.get("backup_url")
+                    else ""
+                )
                 logger.info(
                     f"[灾害预警] 已启动WebSocket连接任务: {conn_name} (数据源: {connection_info['data_source']}{backup_info})"
                 )
-
 
     def _get_data_source_from_connection(self, connection_name: str) -> str:
         """从连接名称获取数据源ID"""
@@ -736,7 +737,6 @@ class DisasterWarningService:
 
         except Exception as e:
             logger.error(f"[灾害预警] 启动Global Quake连接失败: {e}")
-
 
     async def _start_scheduled_http_fetch(self):
         """启动定时HTTP数据获取"""
@@ -1076,12 +1076,17 @@ class DisasterWarningService:
             )
 
             # 注入本地预估信息（模拟真实推送流程）
-            if disaster_type == "earthquake" and self.message_manager.local_monitor.enabled:
+            if (
+                disaster_type == "earthquake"
+                and self.message_manager.local_monitor.enabled
+            ):
                 earthquake = test_event.data
-                _, distance, intensity = self.message_manager.local_monitor.check_event(earthquake)
+                _, distance, intensity = self.message_manager.local_monitor.check_event(
+                    earthquake
+                )
                 test_event.raw_data["local_estimation"] = {
                     "distance": distance,
-                    "intensity": intensity
+                    "intensity": intensity,
                 }
 
             # 直接构建消息并推送（绕过复杂的过滤逻辑，仅测试消息链路）
