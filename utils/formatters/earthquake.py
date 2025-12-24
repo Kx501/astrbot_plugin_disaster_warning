@@ -5,9 +5,9 @@
 
 from datetime import datetime, timedelta, timezone
 
-from .base import BaseMessageFormatter
 from ...core.intensity_calculator import IntensityCalculator
 from ...models.models import EarthquakeData
+from .base import BaseMessageFormatter
 
 
 class CEAEEWFormatter(BaseMessageFormatter):
@@ -552,7 +552,7 @@ class GlobalQuakeFormatter(BaseMessageFormatter):
     @staticmethod
     def format_message(earthquake: EarthquakeData) -> str:
         """格式化Global Quake地震情报消息"""
-        lines = ["🚨[地震情报] Global Quake"]
+        lines = ["🚨[地震预警] Global Quake"]
 
         # 报数信息
         report_num = getattr(earthquake, "updates", 1)
@@ -586,5 +586,15 @@ class GlobalQuakeFormatter(BaseMessageFormatter):
         # 预估最大烈度
         if earthquake.intensity is not None:
             lines.append(f"💥预估最大烈度：{earthquake.intensity}")
+
+        # 最大加速度
+        if earthquake.max_pga is not None:
+            lines.append(f"📈最大加速度：{earthquake.max_pga:.1f} gal")
+
+        # 测站信息
+        if earthquake.stations:
+            total = earthquake.stations.get("total", 0)
+            used = earthquake.stations.get("used", 0)
+            lines.append(f"📡触发测站：{used}/{total}")
 
         return "\n".join(lines)
