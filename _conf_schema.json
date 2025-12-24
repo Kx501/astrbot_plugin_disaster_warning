@@ -152,28 +152,8 @@
           "enabled": {
             "description": "启用Global Quake数据源",
             "type": "bool",
-            "hint": "测试性功能，目前基本处于不可用状态",
+            "hint": "连接到GlobalQuake Monitor服务器获取全球地震实时数据",
             "default": true
-          },
-          "primary_server": {
-            "description": "主服务器地址",
-            "type": "string",
-            "default": "server-backup.globalquake.net"
-          },
-          "primary_port": {
-            "description": "主服务器端口",
-            "type": "int",
-            "default": 38000
-          },
-          "secondary_server": {
-            "description": "备用服务器地址",
-            "type": "string",
-            "default": "server-backup.globalquake.net"
-          },
-          "secondary_port": {
-            "description": "备用服务器端口",
-            "type": "int",
-            "default": 38000
           }
         }
       }
@@ -227,7 +207,7 @@
       "intensity_filter": {
         "description": "基于震级和烈度的地震过滤器",
         "type": "object",
-        "hint": "适用于中国地震预警网、中国地震台网等使用烈度的数据源",
+        "hint": "使用OR逻辑：满足震级要求 或 满足烈度要求 即可推送",
         "items": {
           "enabled": {
             "description": "启用烈度过滤器",
@@ -237,13 +217,13 @@
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
-            "hint": "低于此震级的消息将被过滤。",
+            "hint": "大于等于此震级会推送",
             "default": 2.0
           },
           "min_intensity": {
             "description": "最小烈度",
             "type": "float",
-            "hint": "中国标准，低于此烈度的消息将被过滤。",
+            "hint": "大于等于此烈度会推送（中国标准）",
             "default": 4.0
           }
         }
@@ -251,7 +231,7 @@
       "scale_filter": {
         "description": "基于震级和震度的地震过滤器",
         "type": "object",
-        "hint": "适用于台湾中央气象署、日本气象厅等使用震度的数据源",
+        "hint": "使用OR逻辑：满足震级要求 或 满足震度要求 即可推送",
         "items": {
           "enabled": {
             "description": "启用震度过滤器",
@@ -261,13 +241,13 @@
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
-            "hint": "低于此震级的消息将被过滤。",
+            "hint": "大于等于此震级会推送",
             "default": 2.0
           },
           "min_scale": {
             "description": "最小震度",
             "type": "float",
-            "hint": "日本标准，低于此震度的消息将被过滤。",
+            "hint": "大于等于此震度会推送（日本标准）",
             "default": 1.0
           }
         }
@@ -287,6 +267,30 @@
             "type": "float",
             "hint": "低于此震级的消息将被过滤。",
             "default": 4.5
+          }
+        }
+      },
+      "global_quake_filter": {
+        "description": "Global Quake专用过滤器",
+        "type": "object",
+        "hint": "使用OR逻辑：满足震级要求 或 满足烈度要求 即可推送",
+        "items": {
+          "enabled": {
+            "description": "启用GQ过滤器",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "hint": "大于等于此震级会推送",
+            "default": 4.5
+          },
+          "min_intensity": {
+            "description": "最小烈度",
+            "type": "float",
+            "hint": "大于等于此烈度会推送（支持小数，如3.5）",
+            "default": 5.0
           }
         }
       }

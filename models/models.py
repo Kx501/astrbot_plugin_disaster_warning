@@ -127,6 +127,8 @@ class EarthquakeData:
     serial: str | None = None  # 序列号（P2P数据源）
     is_training: bool = False  # 是否为训练模式
     revision: int | None = None  # 修订版本（Global Quake等）
+    max_pga: float | None = None  # 最大加速度 (gal)
+    stations: dict[str, int] | None = None  # 测站信息 (total, used 等)
 
     # 原始数据
     raw_data: dict[str, Any] = field(default_factory=dict)

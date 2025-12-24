@@ -65,7 +65,7 @@ class WebSocketManager:
                 current_retry = self.connection_retry_counts.get(name, 0) + 1
                 self.connection_retry_counts[name] = current_retry
             else:
-                logger.info(f"[灾害预警] 正在连接 {name}: {uri}")
+                logger.info(f"[灾害预警] 正在连接 {name}")
                 # 首次连接时重置重试计数
                 self.connection_retry_counts[name] = 0
 
@@ -185,13 +185,16 @@ class WebSocketManager:
         """统一处理连接错误"""
         # 清理连接信息
         self.connections.pop(name, None)
-        self.connection_info.pop(name, None)
+        # 保存旧的连接信息以便重连时使用（包含 backup_url 等配置）
+        connection_info = self.connection_info.pop(name, {})
 
         # 启动重连任务
         if self.running:
             # 检查是否应该重连
             if self._should_reconnect_on_error(error):
-                asyncio.create_task(self._schedule_reconnect(name, uri, headers))
+                asyncio.create_task(
+                    self._schedule_reconnect(name, uri, headers, connection_info)
+                )
             else:
                 logger.warning(f"[灾害预警] {name} 遇到不可恢复错误，停止重连")
 
@@ -230,6 +233,7 @@ class WebSocketManager:
             "fan_studio_": "fan_studio",
             "p2p_": "p2p",
             "wolfx_": "wolfx",
+            "global_quake": "global_quake",
         }
 
         # 尝试前缀匹配
@@ -245,7 +249,11 @@ class WebSocketManager:
         return "unknown"
 
     async def _schedule_reconnect(
-        self, name: str, uri: str, headers: dict | None = None
+        self,
+        name: str,
+        uri: str,
+        headers: dict | None = None,
+        connection_info: dict | None = None,
     ):
         """计划重连 - 优化版本，基于配置的固定间隔"""
         if name in self.reconnect_tasks:
@@ -261,9 +269,8 @@ class WebSocketManager:
 
             # 检查是否已达到最大重试次数
             # 如果配置了备用服务器，总次数为主备各 max_retries 次
-            has_backup = name in self.connection_info and self.connection_info[
-                name
-            ].get("backup_url")
+            # 使用传入的 connection_info 检查 backup_url，因为 self.connection_info 已被清理
+            has_backup = connection_info and connection_info.get("backup_url")
             total_max_retries = max_retries * 2 if has_backup else max_retries
 
             if current_retry >= total_max_retries:
@@ -278,19 +285,32 @@ class WebSocketManager:
 
             # 如果有备用服务器且重试次数超过一半，切换到备用服务器
             if has_backup and current_retry >= max_retries:
-                backup_url = self.connection_info[name].get("backup_url")
+                backup_url = connection_info.get("backup_url")
                 if backup_url:
                     target_uri = backup_url
                     server_type = "备用服务器"
 
+            # 计算显示用的重试进度，使日志更符合直觉
+            # 如果是备用服务器，重新从 1 开始计数
+            display_retry = current_retry + 1
+            if server_type == "备用服务器":
+                display_retry = current_retry - max_retries + 1
+
             logger.info(
-                f"[灾害预警] {name} 将在 {reconnect_interval} 秒后尝试重连{server_type} ({current_retry + 1}/{total_max_retries})"
+                f"[灾害预警] {name} 将在 {reconnect_interval} 秒后尝试重连{server_type} ({display_retry}/{max_retries})"
             )
 
             try:
                 await asyncio.sleep(reconnect_interval)
                 # 标记为重试连接
-                await self.connect(name, target_uri, headers, is_retry=True)
+                # 必须将 connection_info 传回去，否则下次重试时配置会丢失
+                await self.connect(
+                    name,
+                    target_uri,
+                    headers,
+                    is_retry=True,
+                    connection_info=connection_info,
+                )
             except Exception as e:
                 logger.error(f"[灾害预警] WebSocket管理器重连执行失败 {name}: {e}")
                 # 只有在连接过程中抛出未捕获异常导致 connect 方法提前退出时，才需要在这里递归调用
@@ -391,6 +411,7 @@ class WebSocketManager:
             "fan_studio_": "fan_studio",
             "p2p_": "p2p",
             "wolfx_": "wolfx",
+            "global_quake": "global_quake",
         }
 
         # 尝试前缀匹配
@@ -448,121 +469,3 @@ class HTTPDataFetcher:
             logger.error(f"[灾害预警] HTTP请求异常 {url}: {e}")
 
         return None
-
-
-class GlobalQuakeClient:
-    """Global Quake TCP客户端 - 保持不变"""
-
-    def __init__(self, config: dict[str, Any], message_logger=None):
-        self.config = config
-        self.message_logger = message_logger
-
-        # 服务器配置
-        self.primary_server = config.get(
-            "primary_server", "server-backup.globalquake.net"
-        )
-        self.secondary_server = config.get(
-            "secondary_server", "server-backup.globalquake.net"
-        )
-        self.primary_port = config.get("primary_port", 38000)
-        self.secondary_port = config.get("secondary_port", 38000)
-
-        self.reader: asyncio.StreamReader | None = None
-        self.writer: asyncio.StreamWriter | None = None
-        self.running = False
-        self.message_handler: Callable | None = None
-
-    def register_handler(self, handler: Callable):
-        """注册消息处理器"""
-        self.message_handler = handler
-
-    async def connect(self):
-        """连接到Global Quake服务器"""
-        servers = [
-            (self.primary_server, self.primary_port),
-            (self.secondary_server, self.secondary_port),
-        ]
-
-        for server, port in servers:
-            try:
-                logger.info(f"[灾害预警] 正在连接Global Quake服务器 {server}:{port}")
-                self.reader, self.writer = await asyncio.open_connection(server, port)
-                logger.info(f"[灾害预警] Global Quake 服务器连接成功: {server}:{port}")
-                return True
-            except Exception as e:
-                logger.error(
-                    f"[灾害预警] Global Quake服务器连接失败 {server}:{port}: {e}"
-                )
-
-        return False
-
-    async def listen(self):
-        """监听消息"""
-        if not self.reader or not self.writer:
-            return
-
-        self.running = True
-
-        try:
-            while self.running:
-                data = await self.reader.readline()
-                if not data:
-                    break
-
-                message = data.decode("utf-8").strip()
-                if message and self.message_handler:
-                    try:
-                        logger.info(
-                            f"[灾害预警] Global Quake收到原始消息: {message[:128]}..."
-                        )
-
-                        # 记录原始消息
-                        if self.message_logger:
-                            try:
-                                self.message_logger.log_tcp_message(
-                                    self.writer.get_extra_info("peername")[0]
-                                    if self.writer
-                                    else "unknown",
-                                    self.writer.get_extra_info("peername")[1]
-                                    if self.writer
-                                    else 0,
-                                    message,
-                                )
-                            except Exception as e:
-                                logger.warning(
-                                    f"[灾害预警] Global Quake消息记录失败: {e}"
-                                )
-
-                        await self.message_handler(message)
-                    except Exception as e:
-                        logger.error(f"[灾害预警] 处理Global Quake消息时出错: {e}")
-
-        except asyncio.CancelledError:
-            logger.info("[灾害预警] Global Quake监听任务被取消")
-        except Exception as e:
-            logger.error(f"[灾害预警] Global Quake监听异常: {e}")
-        finally:
-            await self.disconnect()
-
-    async def disconnect(self):
-        """断开连接"""
-        self.running = False
-
-        if self.writer:
-            try:
-                self.writer.close()
-                await self.writer.wait_closed()
-            except Exception as e:
-                logger.error(f"[灾害预警] 断开Global Quake连接时出错: {e}")
-            finally:
-                self.writer = None
-                self.reader = None
-
-    async def send_message(self, message: str):
-        """发送消息"""
-        if self.writer:
-            try:
-                self.writer.write(message.encode("utf-8"))
-                await self.writer.drain()
-            except Exception as e:
-                logger.error(f"[灾害预警] 发送Global Quake消息失败: {e}")
