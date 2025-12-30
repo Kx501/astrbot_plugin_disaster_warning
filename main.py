@@ -691,33 +691,40 @@ class DisasterWarningPlugin(Star):
 
             # 3. 检查本地监控 (Local Monitor)
             local_pass = True
-            if manager.local_monitor and manager.local_monitor.enabled:
-                allowed, dist, inte = manager.local_monitor.check_event(earthquake)
-
-                # 为了模拟真实流程，手动注入 local_estimation
-                disaster_event.raw_data["local_estimation"] = {
-                    "distance": dist,
-                    "intensity": inte,
-                }
-
-                if allowed:
-                    report_lines.append("✅ 本地监控: 触发")
+            if manager.local_monitor:
+                # 使用统一的辅助方法，返回 None 表示未启用，返回 dict 表示启用
+                result = manager.local_monitor.inject_local_estimation(earthquake)
+                
+                if result is None:
+                    # 未启用
+                    report_lines.append("ℹ️ 本地监控: 未启用")
                 else:
-                    local_pass = False
-                    report_lines.append("❌ 本地监控: 拦截 (严格模式生效中)")
+                    allowed = result.get("is_allowed", True)
+                    dist = result.get("distance")
+                    inte = result.get("intensity")
+                    
+                    if allowed:
+                        report_lines.append("✅ 本地监控: 触发")
+                    else:
+                        local_pass = False
+                        report_lines.append("❌ 本地监控: 拦截 (严格模式生效中)")
 
-                report_lines.append(
-                    f"   ⦁ 严格模式: {'开启' if manager.local_monitor.strict_mode else '关闭 (仅计算不拦截)'}"
-                )
-                report_lines.extend(
-                    [
-                        f"   ⦁ 距本地: {dist:.1f} km",
-                        f"   ⦁ 预估最大本地烈度: {inte:.1f}",
-                        f"   ⦁ 本地烈度阈值: {manager.local_monitor.threshold}",
-                    ]
-                )
+                    report_lines.append(
+                        f"   ⦁ 严格模式: {'开启' if manager.local_monitor.strict_mode else '关闭 (仅计算不拦截)'}"
+                    )
+                    
+                    # 安全格式化，处理可能的 None 值
+                    dist_str = f"{dist:.1f} km" if dist is not None else "未知"
+                    inte_str = f"{inte:.1f}" if inte is not None else "未知"
+                    report_lines.extend(
+                        [
+                            f"   ⦁ 距本地: {dist_str}",
+                            f"   ⦁ 预估最大本地烈度: {inte_str}",
+                            f"   ⦁ 本地烈度阈值: {manager.local_monitor.threshold}",
+                        ]
+                    )
             else:
-                report_lines.append("ℹ️ **本地监控: 未启用")
+                report_lines.append("ℹ️ 本地监控: 未配置")
 
             # 发送报告
             yield event.plain_result("\n".join(report_lines))
