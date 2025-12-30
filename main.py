@@ -691,16 +691,13 @@ class DisasterWarningPlugin(Star):
 
             # 3. 检查本地监控 (Local Monitor)
             local_pass = True
-            if manager.local_monitor and manager.local_monitor.enabled:
-                # 使用统一的辅助方法注入 local_estimation，直接从返回值获取信息
+            if manager.local_monitor:
+                # 使用统一的辅助方法，返回 None 表示未启用，返回 dict 表示启用
                 result = manager.local_monitor.inject_local_estimation(earthquake)
                 
                 if result is None:
-                    # 未启用或注入失败时记录日志
-                    logger.warning(
-                        f"[灾害预警] local_estimation 注入失败: earthquake_id={getattr(earthquake, 'id', 'unknown')}"
-                    )
-                    report_lines.append("⚠️ 本地监控: 数据注入失败")
+                    # 未启用
+                    report_lines.append("ℹ️ 本地监控: 未启用")
                 else:
                     allowed = result.get("is_allowed", True)
                     dist = result.get("distance")
@@ -727,7 +724,7 @@ class DisasterWarningPlugin(Star):
                         ]
                     )
             else:
-                report_lines.append("ℹ️ **本地监控: 未启用")
+                report_lines.append("ℹ️ 本地监控: 未配置")
 
             # 发送报告
             yield event.plain_result("\n".join(report_lines))

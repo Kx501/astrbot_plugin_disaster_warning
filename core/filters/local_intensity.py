@@ -2,6 +2,8 @@
 本地烈度过滤器
 """
 
+from typing import Any
+
 from astrbot.api import logger
 
 from ...models.models import EarthquakeData
@@ -53,7 +55,7 @@ class LocalIntensityFilter:
 
     def inject_local_estimation(
         self, earthquake: EarthquakeData
-    ) -> dict[str, any] | None:
+    ) -> dict[str, Any] | None:
         """
         检查事件并将本地预估信息注入到 earthquake.raw_data 中
         
