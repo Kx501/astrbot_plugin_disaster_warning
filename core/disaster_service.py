@@ -100,61 +100,29 @@ class DisasterWarningService:
             primary_server = "wss://ws.fanstudio.tech"
             backup_server = "wss://ws.fanstudio.hk"
 
-            # 中国地震网地震预警
-            if fan_studio_config.get("china_earthquake_warning", True):
-                self.connections["fan_studio_cea"] = {
-                    "url": f"{primary_server}/cea",
-                    "backup_url": f"{backup_server}/cea",
-                    "handler": "fan_studio",
-                }
+            # 检查是否启用了至少一个 FAN Studio 子数据源
+            fan_sub_sources = [
+                "china_earthquake_warning",
+                "taiwan_cwa_earthquake",
+                "china_cenc_earthquake",
+                "usgs_earthquake",
+                "china_weather_alarm",
+                "china_tsunami",
+                "japan_jma_eew",
+            ]
 
-            # 台湾中央气象署强震即时警报
-            if fan_studio_config.get("taiwan_cwa_earthquake", True):
-                self.connections["fan_studio_cwa"] = {
-                    "url": f"{primary_server}/cwa",
-                    "backup_url": f"{backup_server}/cwa",
-                    "handler": "fan_studio",
-                }
+            any_fan_source_enabled = any(
+                fan_studio_config.get(source, True) for source in fan_sub_sources
+            )
 
-            # 中国地震台网地震测定
-            if fan_studio_config.get("china_cenc_earthquake", True):
-                self.connections["fan_studio_cenc"] = {
-                    "url": f"{primary_server}/cenc",
-                    "backup_url": f"{backup_server}/cenc",
+            if any_fan_source_enabled:
+                # 使用 /all 路径建立单一连接
+                self.connections["fan_studio_all"] = {
+                    "url": f"{primary_server}/all",
+                    "backup_url": f"{backup_server}/all",
                     "handler": "fan_studio",
                 }
-
-            # USGS地震测定
-            if fan_studio_config.get("usgs_earthquake", True):
-                self.connections["fan_studio_usgs"] = {
-                    "url": f"{primary_server}/usgs",
-                    "backup_url": f"{backup_server}/usgs",
-                    "handler": "fan_studio",
-                }
-
-            # 中国气象局气象预警
-            if fan_studio_config.get("china_weather_alarm", True):
-                self.connections["fan_studio_weather"] = {
-                    "url": f"{primary_server}/weatheralarm",
-                    "backup_url": f"{backup_server}/weatheralarm",
-                    "handler": "fan_studio",
-                }
-
-            # 自然资源部海啸预警
-            if fan_studio_config.get("china_tsunami", True):
-                self.connections["fan_studio_tsunami"] = {
-                    "url": f"{primary_server}/tsunami",
-                    "backup_url": f"{backup_server}/tsunami",
-                    "handler": "fan_studio",
-                }
-
-            # 日本气象厅地震预警
-            if fan_studio_config.get("japan_jma_eew", True):
-                self.connections["fan_studio_jma"] = {
-                    "url": f"{primary_server}/jma",
-                    "backup_url": f"{backup_server}/jma",
-                    "handler": "fan_studio",
-                }
+                logger.info("[灾害预警] 已配置 FAN Studio 全量数据连接 (/all)")
 
         # P2P连接配置
         p2p_config = data_sources.get("p2p_earthquake", {})
@@ -309,13 +277,7 @@ class DisasterWarningService:
         # 连接名称到数据源ID的映射
         connection_mapping = {
             # FAN Studio
-            "fan_studio_cea": "cea_fanstudio",
-            "fan_studio_cwa": "cwa_fanstudio",
-            "fan_studio_cenc": "cenc_fanstudio",
-            "fan_studio_usgs": "usgs_fanstudio",
-            "fan_studio_jma": "jma_fanstudio",
-            "fan_studio_weather": "china_weather_fanstudio",
-            "fan_studio_tsunami": "china_tsunami_fanstudio",
+            "fan_studio_all": "fan_studio_mixed",  # 混合数据源
             # P2P
             "p2p_main": "jma_p2p",
             # Wolfx
@@ -327,6 +289,18 @@ class DisasterWarningService:
         }
 
         return connection_mapping.get(connection_name, "unknown")
+
+    def is_fan_studio_source_enabled(self, source_key: str) -> bool:
+        """检查特定的 FAN Studio 数据源是否启用"""
+        data_sources = self.config.get("data_sources", {})
+        fan_studio_config = data_sources.get("fan_studio", {})
+
+        if not isinstance(fan_studio_config, dict) or not fan_studio_config.get(
+            "enabled", True
+        ):
+            return False
+
+        return fan_studio_config.get(source_key, True)
 
     async def _start_global_quake_connection(self):
         """启动Global Quake WebSocket连接 - 现已整合到 WebSocketManager，此方法保留仅用于日志"""
@@ -680,7 +654,9 @@ class DisasterWarningService:
 
             # 注入本地预估信息（使用统一的辅助方法）
             if disaster_type == "earthquake" and self.message_manager.local_monitor:
-                self.message_manager.local_monitor.inject_local_estimation(test_event.data)
+                self.message_manager.local_monitor.inject_local_estimation(
+                    test_event.data
+                )
 
             # 直接构建消息并推送（绕过复杂的过滤逻辑，仅测试消息链路）
             message = self.message_manager._build_message(test_event)

@@ -48,28 +48,114 @@ class WebSocketHandlerRegistry:
                 )
 
             try:
-                # 首先尝试通过连接名称直接识别数据源
-                if connection_name:
-                    direct_source_mapping = {
-                        "fan_studio_cea": "cea_fanstudio",
-                        "fan_studio_cwa": "cwa_fanstudio",
-                        "fan_studio_cenc": "cenc_fanstudio",
-                        "fan_studio_usgs": "usgs_fanstudio",
-                        "fan_studio_jma": "jma_fanstudio",
-                        "fan_studio_weather": "china_weather_fanstudio",
-                        "fan_studio_tsunami": "china_tsunami_fanstudio",
-                    }
+                # 尝试解析JSON
+                try:
+                    data = json.loads(message)
+                except json.JSONDecodeError as e:
+                    logger.error(f"[灾害预警] JSON解析失败: {e}")
+                    return None
 
-                    target_source = direct_source_mapping.get(connection_name)
-                    if target_source and target_source in self.service.handlers:
-                        handler = self.service.handlers[target_source]
+                # 定义源映射关系 (source_name -> (config_key, handler_id))
+                source_map = {
+                    "weatheralarm": ("china_weather_alarm", "china_weather_fanstudio"),
+                    "tsunami": ("china_tsunami", "china_tsunami_fanstudio"),
+                    "cenc": ("china_cenc_earthquake", "cenc_fanstudio"),
+                    "cea": ("china_earthquake_warning", "cea_fanstudio"),
+                    "jma": ("japan_jma_eew", "jma_fanstudio"),
+                    "cwa": ("taiwan_cwa_earthquake", "cwa_fanstudio"),
+                    "usgs": ("usgs_earthquake", "usgs_fanstudio"),
+                }
+
+                # 待处理的消息列表 [(source, msg_payload)]
+                messages_to_process = []
+                msg_type = data.get("type")
+
+                # 1. 处理 initial_all (全量初始消息)
+                if msg_type == "initial_all":
+                    for key, value in data.items():
+                        if key in source_map and isinstance(value, dict):
+                            messages_to_process.append((key, value))
+
+                # 2. 处理 update (单条更新消息)
+                elif msg_type == "update":
+                    source = data.get("source")
+                    if source and source in source_map:
+                        messages_to_process.append((source, data))
+
+                # 3. 兜底：尝试特征识别 (兼容旧格式或无 source 的情况)
+                if not messages_to_process:
+                    # 提取核心数据用于特征识别
+                    msg_data = data
+                    depth = 0
+                    while (
+                        isinstance(msg_data, dict)
+                        and ("Data" in msg_data or "data" in msg_data)
+                        and depth < 3
+                    ):
+                        msg_data = msg_data.get("Data") or msg_data.get("data")
+                        depth += 1
+
+                    if isinstance(msg_data, dict):
+                        # 特征识别逻辑
+                        detected_source = None
+                        if "headline" in msg_data and "type" in msg_data:
+                            detected_source = "weatheralarm"
+                        elif "warningInfo" in msg_data and "code" in msg_data:
+                            detected_source = "tsunami"
+                        elif "infoTypeName" in msg_data and (
+                            "[正式测定]" in msg_data.get("infoTypeName", "")
+                            or "[自动测定]" in msg_data.get("infoTypeName", "")
+                        ):
+                            detected_source = "cenc"
+                        elif (
+                            "infoTypeName" in msg_data
+                            and "final" in msg_data
+                            and isinstance(msg_data.get("epiIntensity"), str)
+                        ):
+                            detected_source = "jma"
+                        elif (
+                            "epiIntensity" in msg_data
+                            and "createTime" in msg_data
+                            and "shockTime" in msg_data
+                            and "infoTypeName" not in msg_data
+                        ):
+                            detected_source = "cwa"
+                        elif (
+                            "epiIntensity" in msg_data
+                            and "eventId" in msg_data
+                            and "updates" in msg_data
+                        ):
+                            detected_source = "cea"
+                        elif "url" in msg_data and "usgs.gov" in msg_data.get(
+                            "url", ""
+                        ):
+                            detected_source = "usgs"
+
+                        if detected_source:
+                            messages_to_process.append((detected_source, data))
+
+                # 4. 遍历处理所有识别出的消息
+                processed_count = 0
+                for source, payload in messages_to_process:
+                    config_key, handler_id = source_map[source]
+
+                    # 检查是否启用
+                    if not self.service.is_fan_studio_source_enabled(config_key):
                         logger.debug(
-                            f"[灾害预警] 通过连接名称使用处理器: {target_source} (连接: {connection_name})"
+                            f"[灾害预警] 数据源 {config_key} ({source}) 未启用，忽略"
                         )
+                        continue
 
-                        event = handler.parse_message(message)
+                    handler = self.service.handlers.get(handler_id)
+                    if handler:
+                        logger.info(f"[灾害预警] 处理 {source} 数据 ({config_key})")
+                        # 注意：这里我们需要传递原始 payload，因为 Handler 内部会再次提取 Data
+                        # 如果 payload 已经是提取过的 Data (initial_all 的情况)，Handler 需要能处理
+                        # 现有的 Handler 通常支持 {"Data": ...} 或直接的 Data 字典
+                        event = handler.parse_message(json.dumps(payload))
+
                         if event:
-                            # 利用connection_info增强事件信息
+                            # 增强事件信息
                             if (
                                 connection_info
                                 and hasattr(event, "raw_data")
@@ -84,131 +170,39 @@ class WebSocketHandlerRegistry:
                                     "established_time": connection_info.get(
                                         "established_time"
                                     ),
+                                    "source_channel": source,
                                 }
 
-                            logger.debug(
-                                f"[灾害预警] FAN Studio处理器解析成功: {event.id}"
-                            )
+                            logger.debug(f"[灾害预警] {source} 解析成功: {event.id}")
                             await self.service._handle_disaster_event(event)
-                            return
-                        else:
-                            logger.debug(
-                                "[灾害预警] FAN Studio处理器返回None，无有效事件"
-                            )
-                            return
-
-                # 如果直接映射失败，尝试智能识别（类似v1.0.0的机制）
-                logger.debug(f"[灾害预警] 开始智能识别数据源，连接: {connection_name}")
-
-                # 尝试解析JSON来识别数据源类型
-                try:
-                    data = json.loads(message)
-
-                    # 获取实际数据 - 注意FAN Studio使用大写D的Data字段
-                    msg_data = data.get("Data", {}) or data.get("data", {})
-                    if not msg_data:
-                        logger.warning(
-                            f"[灾害预警] 消息中没有Data/data字段，连接: {connection_name}"
-                        )
-                        # 尝试直接处理原始数据
-                        msg_data = data
-
-                    # 根据消息内容特征识别数据源
-                    if "epiIntensity" in msg_data:
-                        # 中国地震预警网格式
-                        handler = self.service.handlers.get("cea_fanstudio")
-                        if handler:
-                            logger.debug("[灾害预警] 智能识别为CEA预警数据")
-                            event = handler.parse_message(message)
-                        else:
-                            logger.warning("[灾害预警] 未找到CEA处理器")
-                            return None
-                    elif "maxIntensity" in msg_data and "createTime" in msg_data:
-                        # 台湾中央气象署格式
-                        handler = self.service.handlers.get("cwa_fanstudio")
-                        if handler:
-                            logger.debug("[灾害预警] 智能识别为CWA数据")
-                            event = handler.parse_message(message)
-                        else:
-                            logger.warning("[灾害预警] 未找到CWA处理器")
-                            return None
-                    elif "infoTypeName" in msg_data and (
-                        "[正式测定]" in message or "[自动测定]" in message
-                    ):
-                        # 中国地震台网格式
-                        handler = self.service.handlers.get("cenc_fanstudio")
-                        if handler:
-                            logger.debug("[灾害预警] 智能识别为CENC数据")
-                            event = handler.parse_message(message)
-                        else:
-                            logger.warning("[灾害预警] 未找到CENC处理器")
-                            return None
-                    elif "headline" in msg_data and "预警信号" in message:
-                        # 气象预警
-                        handler = self.service.handlers.get("china_weather_fanstudio")
-                        if handler:
-                            logger.debug("[灾害预警] 智能识别为气象预警数据")
-                            event = handler.parse_message(message)
-                        else:
-                            logger.warning("[灾害预警] 未找到气象预警处理器")
-                            return None
-                    elif "warningInfo" in msg_data and "title" in msg_data:
-                        # 海啸预警
-                        handler = self.service.handlers.get("china_tsunami_fanstudio")
-                        if handler:
-                            logger.debug("[灾害预警] 智能识别为海啸预警数据")
-                            event = handler.parse_message(message)
-                        else:
-                            logger.warning("[灾害预警] 未找到海啸预警处理器")
-                            return None
-                    elif "usgs" in message or (
-                        "placeName" in msg_data and "updateTime" in msg_data
-                    ):
-                        # USGS
-                        handler = self.service.handlers.get("usgs_fanstudio")
-                        if handler:
-                            logger.debug("[灾害预警] 智能识别为USGS数据")
-                            event = handler.parse_message(message)
-                        else:
-                            logger.warning("[灾害预警] 未找到USGS处理器")
-                            return None
+                            processed_count += 1
                     else:
-                        # 默认使用CEA处理器
-                        handler = self.service.handlers.get("cea_fanstudio")
-                        if handler:
+                        logger.warning(f"[灾害预警] 未找到处理器: {handler_id}")
+
+                # 5. 如果没有处理任何消息，且不是心跳包，记录日志
+                if processed_count == 0 and not messages_to_process:
+                    is_heartbeat = (
+                        data.get("type") in ["heartbeat", "ping", "pong"]
+                        or "timestamp" in data
+                        and len(data) <= 3
+                    )
+                    if not is_heartbeat:
+                        # 检查是否包含 Data 但未被识别
+                        has_data = "Data" in data or "data" in data
+                        # 或者是 initial_all 但没有匹配的源
+                        is_unhandled_initial = msg_type == "initial_all"
+
+                        if has_data or is_unhandled_initial:
                             logger.debug(
-                                f"[灾害预警] 无法识别数据源，默认使用CEA处理器，连接: {connection_name}"
+                                f"[灾害预警] 未处理的消息，连接: {connection_name}, "
+                                f"类型: {msg_type}, "
+                                f"源: {data.get('source', 'unknown')}, "
+                                f"数据摘要: {str(data)[:100]}"
                             )
-                            event = handler.parse_message(message)
-                        else:
-                            logger.warning("[灾害预警] 未找到默认CEA处理器")
-                            return None
 
-                except json.JSONDecodeError as e:
-                    logger.error(f"[灾害预警] JSON解析失败: {e}")
-                    return None
-                except Exception as e:
-                    logger.error(f"[灾害预警] 智能识别过程失败: {e}")
-                    return None
-
-                if event:
-                    # 利用connection_info增强事件信息
-                    if (
-                        connection_info
-                        and hasattr(event, "raw_data")
-                        and isinstance(event.raw_data, dict)
-                    ):
-                        event.raw_data["connection_info"] = {
-                            "connection_name": connection_name,
-                            "uri": connection_info.get("uri"),
-                            "connection_type": connection_info.get("connection_type"),
-                            "established_time": connection_info.get("established_time"),
-                        }
-
-                    logger.debug(f"[灾害预警] FAN Studio处理器解析成功: {event.id}")
-                    await self.service._handle_disaster_event(event)
-                else:
-                    logger.debug("[灾害预警] FAN Studio处理器返回None，无有效事件")
+                # 这里的返回值仅用于旧逻辑兼容，现在主要逻辑都在上面处理了
+                # 返回 None 即可，因为我们已经直接调用了 _handle_disaster_event
+                return None
 
             except Exception as e:
                 logger.error(
