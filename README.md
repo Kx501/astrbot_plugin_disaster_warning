@@ -12,8 +12,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/AstrBot-v4.9.0%20Compatible-brightgreen.svg" alt="Compatible with AstrBot v4.9.0">
-  <img src="https://img.shields.io/badge/Release-v1.2.2-brightgreen.svg" alt="Release">
+  <img src="https://img.shields.io/badge/AstrBot-v4.10.2%20Compatible-brightgreen.svg" alt="Compatible with AstrBot v4.10.2">
+  <img src="https://img.shields.io/badge/Release-v1.2.3-brightgreen.svg" alt="Release">
   <img src="https://img.shields.io/badge/QQ群-1033089808-12B7F3.svg" alt="QQ Group">
 </p>
 
@@ -23,10 +23,6 @@
 ---
 
   一个为 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 设计的，功能强大的多数据源灾害预警插件，它能让你的 Bot 提供实时的地震、海啸、气象预警信息推送服务。
-
-# ⚠️ 临时重要通知！！！ 📢
-
-通知：**由于上游 API 服务策略调整，如果你同时启用了超过 5 个来自 Fan Studio 数据源的连接，会导致被服务器断开连接。我们会尽快推出一个热修复版本以修复此问题**
 
 ## 📑 快速导航
 
@@ -81,20 +77,20 @@
 > [!NOTE]
 > 虽然本插件的开发过程中大量使用了 AI 进行辅助，但我保证所有内容都经过了我的严格审查，所有的 AI 生成声明都是形式上的。你可以放心参观本仓库和使用本插件。
 >
-> 根据我对 v1.2.2 版本的简单测试，目前插件的主要功能都能正常运转。但存在部分限制。
+> 根据我对 v1.2.3 版本的简单测试，目前插件的主要功能都能正常运转。但仍有很多可以优化的地方。
 
 > [!TIP]
 > 本项目的相关开发数据 (持续更新中)：
 >
-> 开发时长：累计 17 天（主插件部分）
+> 开发时长：累计 22 天（主插件部分）
 >
-> 累计工时：约 85 小时（主插件部分）
+> 累计工时：约 99 小时（主插件部分）
 >
-> 使用的大模型：Kimi For Coding 、Gemini 3.0 Pro (With RooCode in VSCode)
+> 使用的大模型：Kimi For Coding 、Claude Opus 4.5、Gemini 3.0 Pro (With RooCode in VSCode)
 >
 > 对话窗口搭建：VSCode RooCode 扩展
 >
-> Tokens Used：350,090,935
+> Tokens Used：366,543,985
 
 ## ✨ 功能特性
 
@@ -178,21 +174,21 @@
 
 | 数据源 | 提供者 | 类型 | 状态 |
 | :--- | :--- | :--- | :--- |
-| 中国地震预警网 | FAN Studio | EEW | 🚧 |
+| 中国地震预警网 | FAN Studio | EEW | ✅ |
 | 中国地震预警网 | Wolfx | EEW | ⚠️ |
-| 台湾中央气象署 | FAN Studio | EEW | 🚧 |
+| 台湾中央气象署 | FAN Studio | EEW | ✅ |
 | 台湾中央气象署 | Wolfx | EEW | ⚠️ |
 | 日本气象厅紧急地震速报 | P2P | EEW | ⚠️ |
 | 日本气象厅紧急地震速报 | Wolfx | EEW | ⚠️ |
-| 日本气象厅紧急地震速报 | FAN Studio | EEW | 🚧 |
+| 日本气象厅紧急地震速报 | FAN Studio | EEW | ✅ |
 | Global Quake | Global Quake | EEW | ✅ |
-| 中国地震台网 | FAN Studio | Info | 🚧 |
+| 中国地震台网 | FAN Studio | Info | ✅ |
 | 中国地震台网 | Wolfx | Info | ✅ |
 | 日本气象厅地震情报 | P2P | Info | ✅ |
 | 日本气象厅地震情报 | Wolfx | Info | ✅ |
-| 美国地质调查局 | FAN Studio | Info | 🚧 |
-| 中国气象局 | FAN Studio | Weather | 🚧 |
-| 中国海啸预警中心 | FAN Studio | Tsunami | 🚧 |
+| 美国地质调查局 | FAN Studio | Info | ✅ |
+| 中国气象局 | FAN Studio | Weather | ✅ |
+| 中国海啸预警中心 | FAN Studio | Tsunami | ✅ |
 | 日本气象厅海啸预报 | P2P | Tsunami | 🧪 |
 
 ✅ **正常**  
@@ -327,8 +323,9 @@
 ```
 
 **说明**：
-- 留空 `provinces` 列表则推送全国所有省份的预警
-- 支持所有 34 个省级行政区：直辖市（北京、上海、天津、重庆）、自治区、港澳台
+
+- 留空 `provinces` 列表则推送全国所有省份的预警。
+- 支持所有 34 个省级行政区，还包括直辖市（北京、上海、天津、重庆）、自治区、港澳台。
 
 
 ## 📋 使用命令
@@ -603,7 +600,7 @@ graph TD
 
 2. **多源数据融合与去重**：
     - 插件支持同时连接多个数据源（如同时监听 FAN Studio 和 Wolfx 的 CEA 数据）。
-    - `EventDeduplicator` 实现了基于**时间窗口**（1分钟）、**地理位置**（20km容差）和**震级**（0.5级容差）的智能去重算法，有效避免了多数据源带来的重复推送问题，同时保留了同一事件的更新能力（如报数更新、参数修正）。
+    - `EventDeduplicator` 实现了基于**时间窗口**（1 分钟）、**地理位置**（20 km容差）和**震级**（0.5 级容差）的智能去重算法，有效避免了多数据源带来的重复推送问题，同时保留了同一事件的更新能力（如报数更新、参数修正）。
 
 3. **精细化推送控制**：
     - **阈值过滤**：支持针对不同数据源类型设置独立的过滤规则（如针对 CEA 使用烈度阈值，针对 USGS 使用震级阈值）。
@@ -634,7 +631,7 @@ graph TD
 支持的地图服务商：
 
 - `openstreetmap` - 免费开源地图。
-- `google` - Google地图。
+- `google` - Google 地图。
 - `baidu` - 百度地图（推荐，中国大陆访问更稳定，并且目前做了专门优化）。
 - `amap` - 高德地图（推荐，中国大陆访问更稳定）。
 
@@ -657,7 +654,7 @@ graph TD
 **双层重试机制说明**：
 
 1. **短时重连**：当连接断开后，系统会以 `reconnect_interval` 秒的间隔快速重试，最多重试 `max_reconnect_retries` 次。
-2. **兜底重试**：如果短时重连失败，系统会等待 `fallback_retry_interval` 秒（默认30分钟）后重新开始短时重连流程。兜底重试可以无限进行（`fallback_retry_max_count = -1`），确保服务最终能够恢复。
+2. **兜底重试**：如果短时重连失败，系统会等待 `fallback_retry_interval` 秒（默认 30 分钟）后重新开始短时重连流程。可以设置兜底重试无限进行（`fallback_retry_max_count = -1`），确保服务最终能够恢复。
 
 ### FAN Studio 备用服务器配置
 
@@ -668,8 +665,8 @@ FAN Studio 提供主备两个服务器地址，插件会自动进行故障转移
 
 **自动切换机制**：
 
-- 当主服务器连接失败达到最大重试次数（默认 3 次）后，自动切换到备用服务器
-- 备用服务器也失败 3 次后，停止重连
+- 当主服务器连接失败达到最大重试次数（默认 3 次）后，自动切换到备用服务器。
+- 备用服务器也失败 3 次后，停止重连。
 
 ## 🔧 调试功能
 
@@ -851,7 +848,7 @@ FAN Studio 提供主备两个服务器地址，插件会自动进行故障转移
 #### 注意事项
 
 - 日志文件存储在 `AstrBot/data/plugin_data/astrbot_plugin_disaster_warning/` 目录下。
-- 启用日志记录会略微增加磁盘I/O，但对性能影响很小。
+- 启用日志记录会略微增加磁盘 I/O，但对性能影响很小。
 - 建议定期清理旧日志文件以节省磁盘空间。
 - 日志文件会自动轮转，避免单个文件过大。
 
@@ -864,7 +861,7 @@ A: 检查以下几点：
 
 - 确认插件已启用。
 - 检查网络连接是否正常。
-- 查看AstrBot日志获取详细错误信息。
+- 查看 AstrBot 日志获取详细错误信息。
 - 确认配置文件格式正确。
 
 **Q: 地图链接缩放级别不生效怎么办？**
@@ -878,7 +875,7 @@ A: 已知部分地图服务商的缩放级别参数可能不生效，这是当�
 **Q: 没有收到预警推送？**
 A: 检查以下几点：
 
-- 确认已配置目标QQ群号。
+- 确认已配置目标群号。
 - 检查阈值设置是否过高。
 - 确认数据源已启用。
 - 使用`/灾害预警测试`命令测试推送功能。
@@ -887,7 +884,7 @@ A: 检查以下几点：
 **Q: 推送过于频繁怎么办？**
 A: 调整推送频率控制：
 
-- 增加"每收到N报推送一次"的值。
+- 增加"每收到 N 报推送一次"的值。
 - 启用"是否忽略非最终报"选项。
 - 提高震级、烈度阈值。
 - 调整启用的数据源。
@@ -958,7 +955,7 @@ A: 调整推送频率控制：
 
 GNU Affero General Public License v3.0 - 详见 [LICENSE](LICENSE) 文件。
 
-本插件采用AGPL v3.0许可证，这意味着：
+本插件采用 AGPL v3.0 许可证，这意味着：
 
 - 您可以自由使用、修改和分发本插件。
 - 如果您在网络服务中使用本插件，必须公开源代码。
@@ -996,4 +993,4 @@ GNU Affero General Public License v3.0 - 详见 [LICENSE](LICENSE) 文件。
 
 ---
 
-Made with ❤️ by DBJD-CR & Kimi-For-Coding & Gemini 3.0 Pro
+Made with ❤️ by DBJD-CR & Aloys233 & Kimi-For-Coding & Gemini 3.0 Pro & Claude Opus 4.5
