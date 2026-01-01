@@ -231,8 +231,9 @@ class WebSocketManager:
     def _get_handler_name_for_connection(self, connection_name: str) -> str:
         """获取连接对应的处理器名称"""
         # 定义连接名称前缀到处理器名称的映射
+        # 优化：优先匹配更长的前缀，防止 fan_studio_all 被误识别为其他
         prefix_mappings = {
-            "fan_studio_": "fan_studio",
+            "fan_studio_all": "fan_studio",  # 明确匹配 /all 连接
             "p2p_": "p2p",
             "wolfx_": "wolfx",
             "global_quake": "global_quake",
@@ -265,11 +266,15 @@ class WebSocketManager:
             # 获取重连配置
             max_retries = self.config.get("max_reconnect_retries", 3)
             reconnect_interval = self.config.get("reconnect_interval", 10)
-            
+
             # 获取兜底重试配置
             fallback_enabled = self.config.get("fallback_retry_enabled", True)
-            fallback_interval = self.config.get("fallback_retry_interval", 1800)  # 默认30分钟
-            fallback_max_count = self.config.get("fallback_retry_max_count", -1)  # -1表示无限重试
+            fallback_interval = self.config.get(
+                "fallback_retry_interval", 1800
+            )  # 默认30分钟
+            fallback_max_count = self.config.get(
+                "fallback_retry_max_count", -1
+            )  # -1表示无限重试
 
             # 获取当前重试次数
             current_retry = self.connection_retry_counts.get(name, 0)
@@ -288,18 +293,20 @@ class WebSocketManager:
                         f"[灾害预警] {name} 重连失败，已达到最大重试次数 ({total_max_retries})，停止重连"
                     )
                     return
-                
+
                 # 检查兜底重试次数是否达到上限
                 if fallback_max_count != -1 and current_fallback >= fallback_max_count:
                     logger.error(
                         f"[灾害预警] {name} 兜底重试失败，已达到最大兜底重试次数 ({fallback_max_count})，停止重连"
                     )
                     return
-                
+
                 # 进入兜底重试阶段
                 self.fallback_retry_counts[name] = current_fallback + 1
                 fallback_display = current_fallback + 1
-                fallback_max_display = "无限" if fallback_max_count == -1 else str(fallback_max_count)
+                fallback_max_display = (
+                    "无限" if fallback_max_count == -1 else str(fallback_max_count)
+                )
 
                 # 将兜底重试间隔格式化为更易读的单位，避免小于 60 秒时显示为 0 分钟的情况
                 if fallback_interval < 60:
@@ -316,7 +323,7 @@ class WebSocketManager:
                     f"[灾害预警] {name} 短时重连失败，将在 {fallback_interval_display} 后进行兜底重试 "
                     f"({fallback_display}/{fallback_max_display})"
                 )
-                
+
                 try:
                     await asyncio.sleep(fallback_interval)
                     # 重置短时重连计数器，重新开始短时重连流程
@@ -464,8 +471,9 @@ class WebSocketManager:
     def _find_handler_by_prefix(self, connection_name: str) -> str | None:
         """通过前缀匹配查找处理器名称 - 增强版本"""
         # 定义连接名称前缀到处理器名称的映射
+        # 优化：优先匹配更长的前缀，防止 fan_studio_all 被误识别为其他
         prefix_mappings = {
-            "fan_studio_": "fan_studio",
+            "fan_studio_all": "fan_studio",  # 明确匹配 /all 连接
             "p2p_": "p2p",
             "wolfx_": "wolfx",
             "global_quake": "global_quake",
