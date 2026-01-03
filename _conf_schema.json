@@ -487,6 +487,12 @@
         "type": "bool",
         "hint": "连接建立、断开等",
         "default": true
+      },
+      "http_earthquake_list_max_items": {
+        "description": "Wolfx HTTP地震列表日志最大记录数",
+        "type": "int",
+        "hint": "记录地震列表API响应时，只记录前N条数据，避免日志冗余。最大值50",
+        "default": 5
       }
     }
   }
