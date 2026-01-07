@@ -434,7 +434,7 @@ class MessagePushManager:
                     card = page.locator(selector)
                     
                     # 准备临时文件路径
-                    temp_dir = os.path.join(os.path.dirname(self.data_dir), "temp")
+                    temp_dir = os.path.join(self.data_dir, "temp")
                     if not os.path.exists(temp_dir):
                         os.makedirs(temp_dir, exist_ok=True)
                     
