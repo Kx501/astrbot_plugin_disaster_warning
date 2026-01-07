@@ -309,23 +309,54 @@
 ⏰生效时间：2025年04月25日 12时37分00秒 (UTC+8)
 ```
 
-### 气象预警省份过滤
+### 气象预警关键词过滤
 
-支持按省份白名单过滤气象预警，可在 `data_sources.fan_studio.weather_province_filter` 中配置：
+支持按关键词白名单过滤气象预警，可在 `data_sources.fan_studio.weather_keyword_filter` 中配置：
 
 ```json
 {
-  "weather_province_filter": {
-    "enabled": true,           // 启用省份过滤
-    "provinces": ["广东", "北京", "上海"]  // 只推送这些省份的预警
+  "weather_keyword_filter": {
+    "enabled": true, // 启用关键词过滤
+    "keywords": ["广东", "北京", "朝阳区", "暴雨"] // 只推送标题中包含这些关键词的预警
   }
 }
 ```
 
 **说明**：
 
-- 留空 `provinces` 列表则推送全国所有省份的预警。
-- 支持所有 34 个省级行政区，还包括直辖市（北京、上海、天津、重庆）、自治区、港澳台。
+- 留空 `keywords` 列表则推送全国所有预警。
+- 支持任意关键词匹配，包括：
+  - **省份**：北京、上海、广东、香港、台湾等
+  - **城市/区县**：朝阳区、浦东新区、深圳市等
+  - **预警类型**：暴雨、台风、高温等
+  - **任意文本**：只要预警标题中包含关键词即可匹配
+- 匹配逻辑：如果预警标题中包含 `keywords` 列表中的**任意一个**关键词，就会推送该预警。
+
+### 地震关键词过滤
+
+支持按关键词白名单过滤地震信息，可在 `earthquake_filters.keyword_filter` 中配置：
+
+```json
+{
+  "earthquake_filters": {
+    "keyword_filter": {
+      "enabled": true, // 启用关键词过滤
+      "keywords": ["北京", "上海", "Japan", "Tokyo", "California"] // 只推送地名中包含这些关键词的地震
+    }
+  }
+}
+```
+
+**说明**：
+
+- 留空 `keywords` 列表则推送所有地震。
+- 支持任意关键词匹配，包括：
+  - **省份/州**：北京、上海、广东、California、Tokyo 等
+  - **城市/区县**：朝阳区、浦东新区、深圳市、Los Angeles 等
+  - **国家/地区**：Japan、USA、台湾、香港、澳门等
+  - **任意文本**：只要地震地名中包含关键词即可匹配
+- 匹配逻辑：如果地震的地名中包含 `keywords` 列表中的**任意一个**关键词，就会推送该地震。
+- **适用数据源**：适用于所有地震数据源（CENC、CEA、JMA、USGS、Global Quake 等）。
 
 
 ## 📋 使用命令

@@ -1,3 +1,4 @@
+from .earthquake_keyword import EarthquakeKeywordFilter
 from .intensity_filter import (
     GlobalQuakeFilter,
     IntensityFilter,
@@ -6,14 +7,15 @@ from .intensity_filter import (
 )
 from .local_intensity import LocalIntensityFilter
 from .report_controller import ReportCountController
-from .weather_province import WeatherProvinceFilter
+from .weather_keyword import WeatherKeywordFilter
 
 __all__ = [
+    "EarthquakeKeywordFilter",
     "IntensityFilter",
     "ScaleFilter",
     "USGSFilter",
     "GlobalQuakeFilter",
     "LocalIntensityFilter",
     "ReportCountController",
-    "WeatherProvinceFilter",
+    "WeatherKeywordFilter",
 ]

@@ -72,21 +72,21 @@
             "default": true,
             "hint": "通过FAN Studio WebSocket接收自然资源部海啸预警中心海啸预警信息"
           },
-          "weather_province_filter": {
-            "description": "气象预警省份过滤（白名单）",
+          "weather_keyword_filter": {
+            "description": "气象预警关键词过滤（白名单）",
             "type": "object",
-            "hint": "配置只推送特定省份的气象预警",
+            "hint": "配置只推送包含特定关键词的气象预警（支持省份、城市、区县、预警类型等任意关键词）",
             "items": {
               "enabled": {
-                "description": "启用省份过滤",
+                "description": "启用关键词过滤",
                 "type": "bool",
-                "hint": "启用后只推送白名单中省份的气象预警",
+                "hint": "启用后只推送标题中包含关键词白名单中任意关键词的气象预警",
                 "default": false
               },
-              "provinces": {
-                "description": "省份白名单",
+              "keywords": {
+                "description": "关键词白名单",
                 "type": "list",
-                "hint": "留空推送全国，填写省份名称后只推送对应省份（如：北京、上海、广东、香港、台湾等）",
+                "hint": "留空推送全国，填写关键词后只推送标题中包含任意关键词的预警。支持省份、城市、预警类型（如：暴雨、台风）等任意文本匹配",
                 "default": []
               }
             }
@@ -223,6 +223,25 @@
     "type": "object",
     "hint": "根据不同数据源类型使用不同的过滤器",
     "items": {
+      "keyword_filter": {
+        "description": "地震关键词过滤（白名单）",
+        "type": "object",
+        "hint": "只推送地名中包含关键词的地震，适用于所有地震数据源",
+        "items": {
+          "enabled": {
+            "description": "启用关键词过滤",
+            "type": "bool",
+            "hint": "启用后只推送地名中包含关键词白名单中任意关键词的地震",
+            "default": false
+          },
+          "keywords": {
+            "description": "关键词白名单",
+            "type": "list",
+            "hint": "留空推送所有地震，填写后只推送地名中包含任意关键词的地震。支持任意文本，如：省份、城市、国家、地区等",
+            "default": []
+          }
+        }
+      },
       "intensity_filter": {
         "description": "基于震级和烈度的地震过滤器",
         "type": "object",

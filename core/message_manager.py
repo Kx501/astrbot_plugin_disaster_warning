@@ -31,13 +31,14 @@ from ..utils.formatters import (
 )
 from .event_deduplicator import EventDeduplicator
 from .filters import (
+    EarthquakeKeywordFilter,
     GlobalQuakeFilter,
     IntensityFilter,
     LocalIntensityFilter,
     ReportCountController,
     ScaleFilter,
     USGSFilter,
-    WeatherProvinceFilter,
+    WeatherKeywordFilter,
 )
 
 
@@ -119,13 +120,19 @@ class MessagePushManager:
         # 初始化本地监控过滤器
         self.local_monitor = LocalIntensityFilter(config.get("local_monitoring", {}))
 
-        # 初始化气象预警省份过滤器
-        weather_province_config = (
+        # 初始化气象预警关键词过滤器
+        weather_keyword_config = (
             config.get("data_sources", {})
             .get("fan_studio", {})
-            .get("weather_province_filter", {})
+            .get("weather_keyword_filter", {})
         )
-        self.weather_province_filter = WeatherProvinceFilter(weather_province_config)
+        self.weather_keyword_filter = WeatherKeywordFilter(weather_keyword_config)
+
+        # 初始化地震关键词过滤器
+        earthquake_keyword_config = (
+            config.get("earthquake_filters", {}).get("keyword_filter", {})
+        )
+        self.earthquake_keyword_filter = EarthquakeKeywordFilter(earthquake_keyword_config)
 
     def _parse_target_sessions(self) -> list[str]:
         """解析目标会话 - 使用正确的配置键名"""
@@ -160,10 +167,10 @@ class MessagePushManager:
 
         # 2. 非地震事件检查
         if not isinstance(event.data, EarthquakeData):
-            # 气象预警事件需要进行省份过滤
+            # 气象预警事件需要进行关键词过滤
             if isinstance(event.data, WeatherAlarmData):
                 headline = event.data.headline or event.data.title or ""
-                if self.weather_province_filter.should_filter(headline):
+                if self.weather_keyword_filter.should_filter(headline):
                     return False
             # 海啸和气象事件通过了过滤，可以推送
             return True
@@ -171,6 +178,11 @@ class MessagePushManager:
         # 3. 地震事件专用过滤逻辑
         earthquake = event.data
         source_id = self._get_source_id(event)
+
+        # 地震关键词过滤（优先应用，适用于所有地震数据源）
+        if self.earthquake_keyword_filter.should_filter(earthquake):
+            logger.info(f"[灾害预警] 事件被地震关键词过滤器过滤: {source_id}")
+            return False
 
         # 数据源专用过滤器
         if source_id == "global_quake":
