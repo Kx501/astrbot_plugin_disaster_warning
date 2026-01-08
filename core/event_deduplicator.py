@@ -35,7 +35,7 @@ class EventDeduplicator:
         source_id = self._get_source_id(event)
 
         # 生成事件指纹
-        event_fingerprint = self._generate_event_fingerprint(earthquake)
+        event_fingerprint = self.generate_event_fingerprint(earthquake)
 
         # 关键修复：如果地震时间解析失败，使用当前时间作为后备
         current_time = (
@@ -130,7 +130,7 @@ class EventDeduplicator:
         logger.info(f"[灾害预警] 事件通过基础去重检查: {event.source.value}")
         return True
 
-    def _generate_event_fingerprint(self, earthquake: EarthquakeData) -> str:
+    def generate_event_fingerprint(self, earthquake: EarthquakeData) -> str:
         """生成事件指纹 - 基于地理位置和震级的简化指纹"""
         # GlobalQuake使用UUID作为事件ID，直接使用该ID作为指纹
         # 这样可以避免同一事件因为毫秒级时间差异而生成不同指纹
