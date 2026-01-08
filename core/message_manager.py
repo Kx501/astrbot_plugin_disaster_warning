@@ -162,7 +162,7 @@ class MessagePushManager:
             ).total_seconds() / 3600  # 小时
 
             if time_diff > 1:
-                logger.info(f"[灾害预警] 事件时间过早（{time_diff:.1f}小时前），过滤")
+                logger.debug(f"[灾害预警] 事件时间过早（{time_diff:.1f}小时前），过滤")
                 return False
 
         # 2. 非地震事件检查
@@ -181,7 +181,7 @@ class MessagePushManager:
 
         # 地震关键词过滤（优先应用，适用于所有地震数据源）
         if self.earthquake_keyword_filter.should_filter(earthquake):
-            logger.info(f"[灾害预警] 事件被地震关键词过滤器过滤: {source_id}")
+            logger.debug(f"[灾害预警] 事件被地震关键词过滤器过滤: {source_id}")
             return False
 
         # 数据源专用过滤器

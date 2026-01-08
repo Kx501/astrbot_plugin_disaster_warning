@@ -43,7 +43,7 @@ class WeatherKeywordFilter:
                 return False  # 匹配到关键词，不过滤（推送）
 
         # 未匹配到关键词，过滤（不推送）
-        logger.info(
+        logger.debug(
             f"[灾害预警] 气象预警被关键词过滤器过滤: 标题中未包含任何关键词（标题: {headline[:50]}...）"
         )
         return True

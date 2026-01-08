@@ -63,7 +63,7 @@ class EventDeduplicator:
 
                 if time_diff <= self.time_window.total_seconds() / 60:
                     if self._should_allow_update(earthquake, existing_event):
-                        logger.info(
+                        logger.debug(
                             f"[灾害预警] 允许同一数据源更新: {event.source.value}"
                         )
                         # 更新记录 - 添加当前报数到已处理集合
@@ -75,7 +75,7 @@ class EventDeduplicator:
                         ] or getattr(earthquake, "is_final", False)
                         return True
                     else:
-                        logger.info(
+                        logger.debug(
                             f"[灾害预警] 同一数据源重复事件，过滤: {event.source.value}"
                         )
                         return False
@@ -127,7 +127,7 @@ class EventDeduplicator:
             }
         }
 
-        logger.info(f"[灾害预警] 事件通过基础去重检查: {event.source.value}")
+        logger.debug(f"[灾害预警] 事件通过基础去重检查: {event.source.value}")
         return True
 
     def _generate_event_fingerprint(self, earthquake: EarthquakeData) -> str:
@@ -181,7 +181,7 @@ class EventDeduplicator:
 
         # 检查当前报数是否已处理过
         if current_report not in processed_reports:
-            logger.info(
+            logger.debug(
                 f"[灾害预警] 新报数: 第{current_report}报 (已处理: {sorted(processed_reports)})"
             )
             return True
