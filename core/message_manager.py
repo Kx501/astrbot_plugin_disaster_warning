@@ -362,14 +362,10 @@ class MessagePushManager:
                 # 获取模板名称配置
                 template_name = message_format_config.get("global_quake_template", "Aurora")
 
-                # 加载模板
-                current_file_dir = os.path.dirname(os.path.abspath(__file__))
-                resources_dir = os.path.join(
-                    os.path.dirname(current_file_dir), "resources"
-                )
+                # 加载模板 (使用 self.data_dir 即插件根目录)
+                resources_dir = os.path.join(self.data_dir, "resources")
                 
                 # 构建模板路径: resources/card_templates/{template_name}/global_quake.html
-                # 为了兼容性，如果直接放在 resources 下的文件不存在，尝试查找 card_templates
                 template_path = os.path.join(resources_dir, "card_templates", template_name, "global_quake.html")
                 
                 # 兼容旧逻辑：如果配置了 'default' 但 card_templates 下没有，或者为了防止路径错误，可以增加一些容错
