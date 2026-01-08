@@ -80,7 +80,8 @@ class DisasterWarningPlugin(Star):
 
 📋 可用命令：
 • /灾害预警 - 显示此帮助信息
-• /灾害预警状态 - 查看服务运行状态和推送统计信息
+• /灾害预警状态 - 查看服务运行状态
+• /灾害预警统计 - 查看详细的事件统计报告
 • /灾害预警测试 [群号] [灾害类型] [格式] - 测试推送功能
 • /灾害预警模拟 <纬度> <经度> <震级> [深度] [数据源] - 模拟地震事件
 • /灾害预警配置 查看 - 查看当前配置摘要
@@ -159,49 +160,38 @@ class DisasterWarningPlugin(Star):
                     sources_str = ", ".join(sources)
                     status_text.append(f"  • {display_name}: {sources_str}\n")
 
-            # --- 推送统计 ---
-            push_stats = status.get("push_stats", {})
-            if push_stats:
-                total = push_stats.get("total_events", 0)
-                pushes = push_stats.get("total_pushes", 0)
-                breakdown = push_stats.get("breakdown", {})
-
-                status_text.append("\n")
-                status_text.append("📈 推送统计 (历史累计)：\n")
-                status_text.append(
-                    f"  • 记录到 {total} 个事件，进行了 {pushes} 次推送 / \n"
-                )
-
-                # 分类统计
-                if breakdown:
-                    eq = breakdown.get("earthquake", 0)
-                    ts = breakdown.get("tsunami", 0)
-                    we = breakdown.get("weather", 0)
-                    status_text.append(
-                        f"  • 分类：地震 {eq} 次 | 海啸 {ts} 次 | 气象 {we} 次\n"
-                    )
-
-            # --- 过滤统计 ---
-            if self.disaster_service and self.disaster_service.message_logger:
-                filter_stats = self.disaster_service.message_logger.filter_stats
-                if filter_stats and filter_stats["total_filtered"] > 0:
-                    status_text.append("\n")
-                    status_text.append("🛡️ 过滤拦截：\n")
-                    status_text.append(
-                        f"  • 重复事件：{filter_stats.get('duplicate_events_filtered', 0)}\n"
-                    )
-                    status_text.append(
-                        f"  • 心跳/状态：{filter_stats.get('heartbeat_filtered', 0) + filter_stats.get('p2p_areas_filtered', 0) + filter_stats.get('connection_status_filtered', 0)}\n"
-                    )
-                    status_text.append(
-                        f"  • 总计过滤：{filter_stats.get('total_filtered', 0)}\n"
-                    )
-
             yield event.plain_result("".join(status_text))
 
         except Exception as e:
             logger.error(f"[灾害预警] 获取服务状态失败: {e}")
             yield event.plain_result(f"❌ 获取服务状态失败: {str(e)}")
+
+    @filter.command("灾害预警统计")
+    async def disaster_stats(self, event: AstrMessageEvent):
+        """查看灾害预警详细统计"""
+        if not self.disaster_service:
+            yield event.plain_result("❌ 灾害预警服务未启动")
+            return
+
+        try:
+            status = self.disaster_service.get_service_status()
+            stats_summary = status.get("statistics_summary", "❌ 暂无统计数据")
+
+            # 附加过滤统计信息
+            if self.disaster_service and self.disaster_service.message_logger:
+                filter_stats = self.disaster_service.message_logger.filter_stats
+                if filter_stats and filter_stats["total_filtered"] > 0:
+                    stats_summary += "\n\n🛡️ 日志过滤拦截统计:\n"
+                    stats_summary += f"重复数据拦截: {filter_stats.get('duplicate_events_filtered', 0)}\n"
+                    stats_summary += f"心跳包/连接状态拦截: {filter_stats.get('heartbeat_filtered', 0) + filter_stats.get('p2p_areas_filtered', 0) + filter_stats.get('connection_status_filtered', 0)}\n"
+                    stats_summary += (
+                        f"总计拦截: {filter_stats.get('total_filtered', 0)}"
+                    )
+
+            yield event.plain_result(stats_summary)
+        except Exception as e:
+            logger.error(f"[灾害预警] 获取统计信息失败: {e}")
+            yield event.plain_result(f"❌ 获取统计信息失败: {str(e)}")
 
     @filter.command("灾害预警测试")
     async def disaster_test(
@@ -440,6 +430,23 @@ class DisasterWarningPlugin(Star):
         except Exception as e:
             logger.error(f"[灾害预警] 清除日志失败: {e}")
             yield event.plain_result(f"❌ 清除日志失败: {str(e)}")
+
+    @filter.command("灾害预警统计清除")
+    async def clear_statistics(self, event: AstrMessageEvent):
+        """清除统计数据"""
+        if not self.disaster_service or not self.disaster_service.statistics_manager:
+            yield event.plain_result("❌ 统计功能不可用")
+            return
+
+        try:
+            self.disaster_service.statistics_manager.reset_stats()
+            yield event.plain_result(
+                "✅ 统计数据已重置\n\n所有历史统计记录已被清除，新的统计将重新开始。"
+            )
+
+        except Exception as e:
+            logger.error(f"[灾害预警] 清除统计失败: {e}")
+            yield event.plain_result(f"❌ 清除统计失败: {str(e)}")
 
     @filter.command("灾害预警配置")
     async def disaster_config(self, event: AstrMessageEvent, action: str = None):
