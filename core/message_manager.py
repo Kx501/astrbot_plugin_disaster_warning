@@ -3,14 +3,18 @@
 实现优化的报数控制、拆分过滤器和改进的去重逻辑
 """
 
+import os
 import urllib.parse
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any
+import tempfile
+from jinja2 import Template
+from playwright.async_api import async_playwright
 
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
+from astrbot.core.utils.t2i.renderer import HtmlRenderer
 
 from ..models.data_source_config import (
     get_intensity_based_sources,
@@ -25,6 +29,7 @@ from ..models.models import (
 )
 from ..utils.formatters import (
     BaseMessageFormatter,
+    GlobalQuakeFormatter,
     format_earthquake_message,
     format_tsunami_message,
     format_weather_message,
@@ -37,7 +42,7 @@ from .filters import (
     ReportCountController,
     ScaleFilter,
     USGSFilter,
-    WeatherProvinceFilter,
+    WeatherFilter,
 )
 
 
@@ -47,6 +52,8 @@ class MessagePushManager:
     def __init__(self, config: dict[str, Any], context):
         self.config = config
         self.context = context
+        # 初始化数据目录 (插件根目录)
+        self.data_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
         # 初始化过滤器 - 使用新的配置路径
         earthquake_filters = config.get("earthquake_filters", {})
@@ -85,16 +92,13 @@ class MessagePushManager:
         )
 
         # 初始化报数控制器
+        push_config = config.get("push_frequency_control", {})
         self.report_controller = ReportCountController(
-            push_every_n_reports=config.get("push_frequency_control", {}).get(
-                "push_every_n_reports", 3
-            ),
-            first_report_always_push=config.get("push_frequency_control", {}).get(
-                "first_report_always_push", True
-            ),
-            final_report_always_push=config.get("push_frequency_control", {}).get(
-                "final_report_always_push", True
-            ),
+            cea_cwa_report_n=push_config.get("cea_cwa_report_n", 1),
+            jma_report_n=push_config.get("jma_report_n", 3),
+            gq_report_n=push_config.get("gq_report_n", 5),
+            final_report_always_push=push_config.get("final_report_always_push", True),
+            ignore_non_final_reports=push_config.get("ignore_non_final_reports", False),
         )
 
         # 初始化去重器
@@ -110,22 +114,16 @@ class MessagePushManager:
             ),
         )
 
-        # 事件推送记录
-        self.event_push_records: dict[str, list[dict]] = defaultdict(list)
-
         # 目标会话
         self.target_sessions = self._parse_target_sessions()
 
         # 初始化本地监控过滤器
         self.local_monitor = LocalIntensityFilter(config.get("local_monitoring", {}))
 
-        # 初始化气象预警省份过滤器
-        weather_province_config = (
-            config.get("data_sources", {})
-            .get("fan_studio", {})
-            .get("weather_province_filter", {})
-        )
-        self.weather_province_filter = WeatherProvinceFilter(weather_province_config)
+        # 初始化气象预警过滤器
+        weather_config = config.get("weather_config", {})
+        weather_filter_config = weather_config.get("weather_filter", {})
+        self.weather_filter = WeatherFilter(weather_filter_config)
 
     def _parse_target_sessions(self) -> list[str]:
         """解析目标会话 - 使用正确的配置键名"""
@@ -160,10 +158,10 @@ class MessagePushManager:
 
         # 2. 非地震事件检查
         if not isinstance(event.data, EarthquakeData):
-            # 气象预警事件需要进行省份过滤
+            # 气象预警事件需要进行过滤
             if isinstance(event.data, WeatherAlarmData):
                 headline = event.data.headline or event.data.title or ""
-                if self.weather_province_filter.should_filter(headline):
+                if self.weather_filter.should_filter(headline):
                     return False
             # 海啸和气象事件通过了过滤，可以推送
             return True
@@ -299,8 +297,8 @@ class MessagePushManager:
             return False
 
         try:
-            # 3. 构建消息
-            message = self._build_message(event)
+            # 3. 构建消息 (使用异步构建以支持卡片渲染)
+            message = await self._build_message_async(event)
             logger.debug("[灾害预警] 消息构建完成")
 
             # 4. 获取目标会话
@@ -320,7 +318,6 @@ class MessagePushManager:
                     logger.error(f"[灾害预警] 推送到 {session} 失败: {e}")
 
             # 6. 记录推送
-            self._record_push(event)
             logger.info(
                 f"[灾害预警] 事件 {event.id} 推送完成，成功推送到 {push_success_count} 个会话"
             )
@@ -331,22 +328,157 @@ class MessagePushManager:
             return False
 
     def _build_message(self, event: DisasterEvent) -> MessageChain:
-        """构建消息 - 使用格式化器并应用消息格式配置"""
+        """构建消息 - 使用格式化器并应用消息格式配置（向后兼容，仅调用同步逻辑）"""
         source_id = self._get_source_id(event)
-
-        # 获取消息格式配置
         message_format_config = self.config.get("message_format", {})
-        include_map = message_format_config.get("include_map", True)
-        map_provider = message_format_config.get("map_provider", "baidu")
-        map_zoom_level = message_format_config.get("map_zoom_level", 5)
-        detailed_jma = message_format_config.get("detailed_jma_intensity", False)
-
-        logger.debug(
-            f"[灾害预警] 消息配置: provider={map_provider}, zoom={map_zoom_level}, detailed_jma={detailed_jma}"
+        return self._build_message_sync(
+            event,
+            source_id,
+            message_format_config.get("include_map", True),
+            message_format_config.get("map_provider", "baidu"),
+            message_format_config.get("map_zoom_level", 5),
+            message_format_config.get("detailed_jma_intensity", False),
         )
 
+    async def _build_message_async(self, event: DisasterEvent) -> MessageChain:
+        """构建消息 (异步版本) - 支持卡片渲染"""
+        source_id = self._get_source_id(event)
+        message_format_config = self.config.get("message_format", {})
+        use_gq_card = message_format_config.get("use_global_quake_card", False)
+
+        if (
+            source_id == "global_quake"
+            and use_gq_card
+            and isinstance(event.data, EarthquakeData)
+        ):
+            try:
+                # 渲染 Global Quake 卡片
+                context = GlobalQuakeFormatter.get_render_context(event.data)
+
+                
+                # 获取模板名称配置
+                template_name = message_format_config.get("global_quake_template", "Aurora")
+
+                # 加载模板 (使用 self.data_dir 即插件根目录)
+                resources_dir = os.path.join(self.data_dir, "resources")
+                
+                # 构建模板路径: resources/card_templates/{template_name}/global_quake.html
+                template_path = os.path.join(resources_dir, "card_templates", template_name, "global_quake.html")
+                
+                # 兼容旧逻辑：如果配置了 'default' 但 card_templates 下没有，或者为了防止路径错误，可以增加一些容错
+                # 但根据重构计划，我们优先相信 card_templates 下的结构
+
+
+                if not os.path.exists(template_path):
+                    logger.error(f"[灾害预警] 找不到模板文件: {template_path}")
+                    # 回退到同步构建
+                    return self._build_message_sync(
+                        event,
+                        source_id,
+                        message_format_config.get("include_map", True),
+                        message_format_config.get("map_provider", "baidu"),
+                        message_format_config.get("map_zoom_level", 5),
+                        message_format_config.get("detailed_jma_intensity", False),
+                    )
+
+                with open(template_path, encoding="utf-8") as f:
+                    template_content = f.read()
+                
+                # Jinja2 渲染
+                template = Template(template_content)
+                html_content = template.render(**context)
+
+                # 使用 Playwright 渲染
+                async with async_playwright() as p:
+                    browser = await p.chromium.launch(
+                        args=['--no-sandbox', '--disable-setuid-sandbox']
+                    )
+                    
+                    # 创建新页面，视口设置大一点均可，因为我们只截取元素
+                    # 关键修复：设置 device_scale_factor=3 提高渲染DPI，解决图片模糊问题
+                    page = await browser.new_page(
+                        viewport={"width": 800, "height": 800},
+                        device_scale_factor=3
+                    )
+                    
+                    await page.set_content(html_content)
+
+                    # 等待元素加载
+                    await page.wait_for_load_state("networkidle")
+                    
+                    # 关键修复：等待 D3 渲染完成标记
+                    try:
+                        await page.wait_for_selector(".d3-ready", state="attached", timeout=5000)
+                    except Exception:
+                        # 如果超时（例如JS报错），也不要崩溃，尽力而为截图
+                        pass
+
+                    # 统一使用 ID 选择器，这在所有模板中都将通用
+                    selector = "#card-wrapper"
+                    try:
+                        await page.wait_for_selector(selector, state="visible", timeout=5000)
+                    except Exception:
+                        # 兜底：尝试找常见的类名
+                        selector = ".quake-card"
+                        await page.wait_for_selector(selector, state="visible", timeout=2000)
+                    
+                    # 定位卡片元素
+                    card = page.locator(selector)
+                    
+                    # 准备临时文件路径 (使用 AstrBot 数据目录的 temp)
+                    # self.data_dir = plugins/astrbot_plugin_disaster_warning
+                    # 上两级 = data/temp
+                    astrbot_data_dir = os.path.dirname(os.path.dirname(self.data_dir))
+                    temp_dir = os.path.join(astrbot_data_dir, "temp")
+                    if not os.path.exists(temp_dir):
+                        os.makedirs(temp_dir, exist_ok=True)
+                    
+                    image_filename = f"gq_card_{event.data.id}_{int(datetime.now().timestamp())}.png"
+                    image_path = os.path.join(temp_dir, image_filename)
+                    
+                    # 截图：只截取元素，背景透明
+                    await card.screenshot(path=image_path, omit_background=True)
+                    
+                    await browser.close()
+
+                    if os.path.exists(image_path):
+                        logger.info(
+                            f"[灾害预警] Global Quake 卡片渲染成功: {image_path}"
+                        )
+                        chain = [Comp.Image.fromFileSystem(image_path)]
+                        return MessageChain(chain)
+                    else:
+                        logger.warning(
+                            "[灾害预警] Global Quake 卡片渲染未生成文件"
+                        )
+
+            except Exception as e:
+                logger.error(
+                    f"[灾害预警] Global Quake 卡片渲染失败: {e}，回退到文本模式"
+                )
+
+        # 默认回退到同步构建逻辑
+        return self._build_message_sync(
+            event,
+            source_id,
+            message_format_config.get("include_map", True),
+            message_format_config.get("map_provider", "baidu"),
+            message_format_config.get("map_zoom_level", 5),
+            message_format_config.get("detailed_jma_intensity", False),
+        )
+
+    def _build_message_sync(
+        self, event, source_id, include_map, map_provider, map_zoom_level, detailed_jma
+    ) -> MessageChain:
+        """同步构建消息逻辑（原 _build_message 内容）"""
         if isinstance(event.data, WeatherAlarmData):
-            message_text = format_weather_message(source_id, event.data)
+            weather_config = self.config.get("weather_config", {})
+            options = {
+                "max_description_length": weather_config.get(
+                    "max_description_length", 384
+                )
+            }
+            message_text = format_weather_message(source_id, event.data, options)
         elif isinstance(event.data, TsunamiData):
             message_text = format_tsunami_message(source_id, event.data)
         elif isinstance(event.data, EarthquakeData):
@@ -383,97 +515,11 @@ class MessagePushManager:
         chain = [Comp.Plain(message_text)]
         return MessageChain(chain)
 
-    def _generate_map_link(
-        self, latitude: float, longitude: float, provider: str, zoom: int
-    ) -> str:
-        """根据配置生成地图链接 - 已移至message_formatters模块"""
-        # 这个方法现在由message_formatters模块处理
-        return BaseMessageFormatter.get_map_link(
-            latitude,
-            longitude,
-            provider,
-            zoom,
-            magnitude=None,  # 这个方法没有震级信息，使用默认值
-            place_name=None,  # 这个方法没有位置信息，使用默认值
-        )
-
     async def _send_message(self, session: str, message: MessageChain):
         """发送消息到指定会话"""
         await self.context.send_message(session, message)
 
-    def _record_push(self, event: DisasterEvent):
-        """记录推送"""
-        event_id = self._get_event_id(event)
-
-        # 记录推送信息
-        push_info = {
-            "timestamp": datetime.now(),
-            "event_id": event_id,
-            "disaster_type": event.disaster_type.value,
-            "source": self._get_source_id(event),
-        }
-
-        self.event_push_records[event_id].append(push_info)
-
-    def _get_event_id(self, event: DisasterEvent) -> str:
-        """获取事件ID"""
-        if isinstance(event.data, EarthquakeData):
-            return event.data.event_id or event.data.id
-        elif isinstance(event.data, (TsunamiData, WeatherAlarmData)):
-            return event.data.id
-        return event.id
-
-    def get_push_stats(self) -> dict[str, Any]:
-        """获取推送统计"""
-        total_events = len(self.event_push_records)
-        total_pushes = sum(len(records) for records in self.event_push_records.values())
-
-        return {
-            "total_events": total_events,
-            "total_pushes": total_pushes,
-            "recent_events": self._get_recent_events(),
-        }
-
-    def _get_recent_events(self, hours: int = 24) -> list[dict]:
-        """获取最近的事件"""
-        recent_time = datetime.now() - timedelta(hours=hours)
-        recent_events = []
-
-        for event_id, records in self.event_push_records.items():
-            recent_records = [
-                record for record in records if record["timestamp"] > recent_time
-            ]
-
-            if recent_records:
-                recent_events.append(
-                    {
-                        "event_id": event_id,
-                        "push_count": len(recent_records),
-                        "last_push": max(
-                            record["timestamp"] for record in recent_records
-                        ),
-                    }
-                )
-
-        return sorted(recent_events, key=lambda x: x["last_push"], reverse=True)
-
-    def cleanup_old_records(self, days: int = 7):
+    def cleanup_old_records(self):
         """清理旧记录"""
-        cutoff_time = datetime.now() - timedelta(days=days)
-
-        # 清理事件推送记录
-        for event_id in list(self.event_push_records.keys()):
-            records = self.event_push_records[event_id]
-            recent_records = [
-                record for record in records if record["timestamp"] > cutoff_time
-            ]
-
-            if recent_records:
-                self.event_push_records[event_id] = recent_records
-            else:
-                del self.event_push_records[event_id]
-
         # 清理去重器
         self.deduplicator.cleanup_old_events()
-
-        logger.info(f"[灾害预警] 已清理 {days} 天前的推送记录")
