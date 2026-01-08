@@ -121,11 +121,8 @@ class MessagePushManager:
         self.local_monitor = LocalIntensityFilter(config.get("local_monitoring", {}))
 
         # 初始化气象预警过滤器
-        weather_filter_config = (
-            config.get("data_sources", {})
-            .get("fan_studio", {})
-            .get("weather_filter", {})
-        )
+        weather_config = config.get("weather_config", {})
+        weather_filter_config = weather_config.get("weather_filter", {})
         self.weather_filter = WeatherFilter(weather_filter_config)
 
     def _parse_target_sessions(self) -> list[str]:
@@ -475,7 +472,13 @@ class MessagePushManager:
     ) -> MessageChain:
         """同步构建消息逻辑（原 _build_message 内容）"""
         if isinstance(event.data, WeatherAlarmData):
-            message_text = format_weather_message(source_id, event.data)
+            weather_config = self.config.get("weather_config", {})
+            options = {
+                "max_description_length": weather_config.get(
+                    "max_description_length", 384
+                )
+            }
+            message_text = format_weather_message(source_id, event.data, options)
         elif isinstance(event.data, TsunamiData):
             message_text = format_tsunami_message(source_id, event.data)
         elif isinstance(event.data, EarthquakeData):

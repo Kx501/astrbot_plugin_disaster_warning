@@ -48,6 +48,7 @@ WEATHER_EMOJI_MAP = {
     "空气重污染": "🏭😷",
     "臭氧": "🧪",
     "浓浮尘": "🏜️🌫️",
+    "沙尘": "🏜️💨",
     "重污染天气": "🌫️😷",
     # 强对流细分预警
     "雷电": "⚡",
@@ -64,7 +65,7 @@ WEATHER_EMOJI_MAP = {
     "寒冷": "🧥",
     "低温冷害": "🌡️📉🍂",
     "高温中暑": "☀️🤢",
-    "干热风": "🔥�",
+    "干热风": "🔥🍃",
     # 城市与环境专项
     "灰霾": "🌫️",
     "臭氧污染": "🧪⚠️",
@@ -74,7 +75,7 @@ WEATHER_EMOJI_MAP = {
     "农田渍涝": "🚜🌊",
     "作物霜冻": "🌱❄️",
     "倒春寒": "🌱🥶",
-    "寒露风": "🍂�",
+    "寒露风": "🍂🍃",
     # 水文与地质灾害预警
     "中小河流洪水": "🌊🏘️",
     "山洪灾害": "⛰️🌊",
@@ -108,13 +109,18 @@ COLOR_LEVEL_EMOJI = {
     "白色": "⚪",
 }
 
+# 默认正文描述最大长度
+DEFAULT_MAX_DESCRIPTION_LENGTH = 384
+
 
 class WeatherFormatter(BaseMessageFormatter):
     """气象预警格式化器"""
 
     @staticmethod
-    def format_message(weather: WeatherAlarmData) -> str:
+    def format_message(weather: WeatherAlarmData, options: dict = None) -> str:
         """格式化气象预警消息"""
+        if options is None:
+            options = {}
 
         # 提取预警类型
         headline = weather.headline or ""
@@ -141,8 +147,11 @@ class WeatherFormatter(BaseMessageFormatter):
         # 描述
         if weather.description:
             desc = weather.description
-            if len(desc) > 384:
-                desc = desc[:381] + "..."
+            max_len = options.get(
+                "max_description_length", DEFAULT_MAX_DESCRIPTION_LENGTH
+            )
+            if max_len > 0 and len(desc) > max_len:
+                desc = desc[: max_len - 3] + "..."
             lines.append(f"📝{desc}")
 
         # 发布时间
