@@ -75,11 +75,16 @@ def format_tsunami_message(source_id: str, tsunami: TsunamiData) -> str:
     return BaseMessageFormatter.format_message(tsunami)
 
 
-def format_weather_message(source_id: str, weather: WeatherAlarmData) -> str:
+def format_weather_message(
+    source_id: str, weather: WeatherAlarmData, options: dict = None
+) -> str:
     """格式化气象消息"""
     formatter_class = get_formatter(source_id)
     if hasattr(formatter_class, "format_message"):
-        return formatter_class.format_message(weather)
+        try:
+            return formatter_class.format_message(weather, options=options)
+        except TypeError:
+            return formatter_class.format_message(weather)
 
     # 回退到基础格式化
     return BaseMessageFormatter.format_message(weather)

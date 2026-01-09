@@ -23,6 +23,7 @@ from .handler_registry import WebSocketHandlerRegistry
 from .handlers import DATA_HANDLERS
 from .message_logger import MessageLogger
 from .message_manager import MessagePushManager
+from .statistics_manager import StatisticsManager
 from .websocket_manager import HTTPDataFetcher, WebSocketManager
 
 
@@ -36,6 +37,9 @@ class DisasterWarningService:
 
         # 初始化消息记录器
         self.message_logger = MessageLogger(config, "disaster_warning")
+
+        # 初始化统计管理器
+        self.statistics_manager = StatisticsManager()
 
         # 初始化组件
         self.ws_manager = WebSocketManager(
@@ -178,6 +182,7 @@ class DisasterWarningService:
 
         try:
             self.running = True
+            self.start_time = datetime.now()  # 记录启动时间
             logger.info("[灾害预警] 正在启动灾害预警服务...")
 
             # 启动WebSocket管理器
@@ -286,6 +291,8 @@ class DisasterWarningService:
             "wolfx_taiwan_cwa_eew": "cwa_wolfx",
             "wolfx_china_cenc_earthquake": "cenc_wolfx",
             "wolfx_japan_jma_earthquake": "jma_wolfx_info",
+            # Global Quake
+            "global_quake": "global_quake",
         }
 
         return connection_mapping.get(connection_name, "unknown")
@@ -329,18 +336,14 @@ class DisasterWarningService:
                             "https://api.wolfx.jp/cenc_eqlist.json"
                         )
                         if cenc_data:
-                            # 记录原始HTTP响应数据
+                            # 记录原始HTTP响应数据（仅摘要，避免日志膨胀）
                             if self.message_logger:
                                 try:
-                                    self.message_logger.log_raw_message(
+                                    self.message_logger.log_http_earthquake_list(
                                         source="http_wolfx_cenc",
-                                        message_type="http_response",
-                                        raw_data=json.dumps(cenc_data),
-                                        connection_info={
-                                            "url": "https://api.wolfx.jp/cenc_eqlist.json",
-                                            "method": "GET",
-                                            "data_source": "wolfx_cenc_earthquake",
-                                        },
+                                        url="https://api.wolfx.jp/cenc_eqlist.json",
+                                        earthquake_list=cenc_data,
+                                        max_items=5,
                                     )
                                 except Exception as log_e:
                                     logger.warning(
@@ -359,18 +362,14 @@ class DisasterWarningService:
                             "https://api.wolfx.jp/jma_eqlist.json"
                         )
                         if jma_data:
-                            # 记录原始HTTP响应数据
+                            # 记录原始HTTP响应数据（仅摘要，避免日志膨胀）
                             if self.message_logger:
                                 try:
-                                    self.message_logger.log_raw_message(
+                                    self.message_logger.log_http_earthquake_list(
                                         source="http_wolfx_jma",
-                                        message_type="http_response",
-                                        raw_data=json.dumps(jma_data),
-                                        connection_info={
-                                            "url": "https://api.wolfx.jp/jma_eqlist.json",
-                                            "method": "GET",
-                                            "data_source": "wolfx_jma_earthquake",
-                                        },
+                                        url="https://api.wolfx.jp/jma_eqlist.json",
+                                        earthquake_list=jma_data,
+                                        max_items=5,
                                     )
                                 except Exception as log_e:
                                     logger.warning(
@@ -404,11 +403,39 @@ class DisasterWarningService:
         task = asyncio.create_task(cleanup())
         self.scheduled_tasks.append(task)
 
+    def is_in_silence_period(self) -> bool:
+        """检查是否处于启动后的静默期"""
+        if not hasattr(self, "start_time"):
+            return False
+
+        debug_config = self.config.get("debug_config", {})
+        silence_duration = debug_config.get("startup_silence_duration", 0)
+
+        if silence_duration <= 0:
+            return False
+
+        elapsed = (datetime.now() - self.start_time).total_seconds()
+        return elapsed < silence_duration
+
     async def _handle_disaster_event(self, event: DisasterEvent):
         """处理灾害事件"""
+        # 检查静默期
+        if self.is_in_silence_period():
+            debug_config = self.config.get("debug_config", {})
+            silence_duration = debug_config.get("startup_silence_duration", 0)
+            elapsed = (datetime.now() - self.start_time).total_seconds()
+            logger.debug(
+                f"[灾害预警] 处于启动静默期 (剩余 {silence_duration - elapsed:.1f}s)，忽略事件: {event.id}"
+            )
+            # 静默期内不记录统计数据，直接返回
+            return
+
         try:
             logger.debug(f"[灾害预警] 处理灾害事件: {event.id}")
             self._log_event(event)
+
+            # 记录统计数据 (不管是否推送成功)
+            self.statistics_manager.record_push(event)
 
             # 推送消息 - 使用新消息管理器
             push_result = await self.message_manager.push_event(event)
@@ -471,12 +498,34 @@ class DisasterWarningService:
             "global_quake_connected": global_quake_connected,
             "total_connections": len(connection_status),
             "connection_details": connection_status,
-            "push_stats": self.message_manager.get_push_stats(),
+            "statistics_summary": self.statistics_manager.get_summary(),
             "data_sources": self._get_active_data_sources(),
             "message_logger_enabled": self.message_logger.enabled
             if self.message_logger
             else False,
+            "uptime": self._get_uptime(),  # 添加运行时间
         }
+
+    def _get_uptime(self) -> str:
+        """获取服务运行时间"""
+        if not self.running or not hasattr(self, "start_time"):
+            return "未运行"
+
+        delta = datetime.now() - self.start_time
+        days = delta.days
+        hours, remainder = divmod(delta.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        parts = []
+        if days > 0:
+            parts.append(f"{days}天")
+        if hours > 0:
+            parts.append(f"{hours}小时")
+        if minutes > 0:
+            parts.append(f"{minutes}分")
+        parts.append(f"{seconds}秒")
+
+        return "".join(parts)
 
     def _get_active_data_sources(self) -> list[str]:
         """获取活跃的数据源"""
