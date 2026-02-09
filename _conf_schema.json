@@ -39,8 +39,14 @@
           "china_earthquake_warning": {
             "description": "中国地震网地震预警",
             "type": "bool",
-            "default": true,
+            "default": false,
             "hint": "通过FAN Studio WebSocket接收中国地震网地震预警信息"
+          },
+          "china_earthquake_warning_provincial": {
+            "description": "中国地震网地震预警(省级)",
+            "type": "bool",
+            "default": true,
+            "hint": "通过FAN Studio WebSocket接收中国地震网省级地震预警信息"
           },
           "taiwan_cwa_earthquake": {
             "description": "台湾中央气象署：强震即时警报",
