@@ -23,7 +23,6 @@ from ..models.models import (
     EarthquakeData,
     TsunamiData,
     WeatherAlarmData,
-    get_data_source_from_id,
 )
 from ..utils.fe_regions import load_data_async
 from ..utils.formatters import MESSAGE_FORMATTERS
@@ -76,7 +75,7 @@ class DisasterWarningService:
 
         # 定时任务
         self.scheduled_tasks = []
-        
+
         # Web 管理端服务器引用（用于事件驱动的 WebSocket 推送）
         self.web_admin_server = None
 
@@ -186,6 +185,7 @@ class DisasterWarningService:
             # 检查是否启用了至少一个 FAN Studio 子数据源
             fan_sub_sources = [
                 "china_earthquake_warning",
+                "china_earthquake_warning_provincial",
                 "taiwan_cwa_earthquake",
                 "taiwan_cwa_report",
                 "china_cenc_earthquake",
@@ -790,16 +790,20 @@ class DisasterWarningService:
                 logger.debug(f"[灾害预警] ✅ 事件推送成功: {event.id}")
             else:
                 logger.debug(f"[灾害预警] 事件推送被过滤: {event.id}")
-            
+
             # 实时通知 Web 管理端（如果已配置）
             if self.web_admin_server:
                 try:
                     # 构建事件摘要
                     event_summary = {
                         "id": event.id,
-                        "type": event.disaster_type.value if hasattr(event.disaster_type, 'value') else str(event.disaster_type),
-                        "source": event.source.value if hasattr(event.source, 'value') else str(event.source),
-                        "time": datetime.now().isoformat()
+                        "type": event.disaster_type.value
+                        if hasattr(event.disaster_type, "value")
+                        else str(event.disaster_type),
+                        "source": event.source.value
+                        if hasattr(event.source, "value")
+                        else str(event.source),
+                        "time": datetime.now().isoformat(),
                     }
                     await self.web_admin_server.notify_event(event_summary)
                 except Exception as ws_e:
@@ -861,20 +865,71 @@ class DisasterWarningService:
             for task in self.connection_tasks
         )
 
+        # 获取子数据源启用状态
+        sub_source_status = self._get_sub_source_status()
+
         return {
             "running": self.running,
             "active_websocket_connections": active_websocket_connections,
             "global_quake_connected": global_quake_connected,
             "total_connections": len(connection_status),
             "connection_details": connection_status,
+            "sub_source_status": sub_source_status,  # 新增：子数据源状态
             "statistics_summary": self.statistics_manager.get_summary(),
             "data_sources": self._get_active_data_sources(),
             "message_logger_enabled": self.message_logger.enabled
             if self.message_logger
             else False,
             "uptime": self._get_uptime(),  # 添加运行时间
-            "start_time": self.start_time.isoformat() if hasattr(self, "start_time") else None,
+            "start_time": self.start_time.isoformat()
+            if hasattr(self, "start_time")
+            else None,
         }
+
+    def _get_sub_source_status(self) -> dict[str, dict[str, bool]]:
+        """获取所有子数据源的启用状态"""
+        status = {
+            "fan_studio": {},
+            "p2p_earthquake": {},
+            "wolfx": {},
+            "global_quake": {},
+        }
+
+        data_sources = self.config.get("data_sources", {})
+
+        # FAN Studio
+        fan_config = data_sources.get("fan_studio", {})
+        if isinstance(fan_config, dict):
+            status["fan_studio"] = {
+                k: v
+                for k, v in fan_config.items()
+                if k != "enabled" and isinstance(v, bool)
+            }
+
+        # P2P
+        p2p_config = data_sources.get("p2p_earthquake", {})
+        if isinstance(p2p_config, dict):
+            status["p2p_earthquake"] = {
+                k: v
+                for k, v in p2p_config.items()
+                if k != "enabled" and isinstance(v, bool)
+            }
+
+        # Wolfx
+        wolfx_config = data_sources.get("wolfx", {})
+        if isinstance(wolfx_config, dict):
+            status["wolfx"] = {
+                k: v
+                for k, v in wolfx_config.items()
+                if k != "enabled" and isinstance(v, bool)
+            }
+
+        # Global Quake (仅总开关)
+        gq_config = data_sources.get("global_quake", {})
+        if isinstance(gq_config, dict):
+            status["global_quake"] = {"enabled": gq_config.get("enabled", False)}
+
+        return status
 
     def _get_uptime(self) -> str:
         """获取服务运行时间"""
