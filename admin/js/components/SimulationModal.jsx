@@ -1,6 +1,15 @@
 const { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Typography, TextField, Select, MenuItem, FormControl, InputLabel, Divider, IconButton } = MaterialUI;
 const { useState, useEffect } = React;
 
+/**
+ * 模拟预警测试模态框
+ * 允许管理员发送模拟的灾害预警消息，用于测试推送配置和格式
+ * 支持自定义灾害类型、测试格式以及具体的经纬度、震级等参数
+ *
+ * @param {Object} props
+ * @param {boolean} props.open - 是否显示模态框
+ * @param {Function} props.onClose - 关闭回调
+ */
 function SimulationModal({ open, onClose }) {
     const api = useApi();
     const [disasterType, setDisasterType] = useState('earthquake');
@@ -23,6 +32,7 @@ function SimulationModal({ open, onClose }) {
         }
     }, [open]);
 
+    // 加载后端支持的模拟参数配置（灾害类型、测试格式等）
     const loadParams = async () => {
         try {
             const result = await api.getSimulationParams();
@@ -32,6 +42,7 @@ function SimulationModal({ open, onClose }) {
         }
     };
 
+    // 获取当前浏览器位置（用于快速填充经纬度）
     const handleGeolocate = async () => {
         try {
             const result = await api.getGeoLocation();
@@ -49,11 +60,12 @@ function SimulationModal({ open, onClose }) {
         }
     };
 
+    // 发送模拟请求
     const handleSend = async () => {
         setSending(true);
         try {
             const result = await api.sendSimulation({
-                target_group: targetGroup,
+                target_session: targetGroup,
                 disaster_type: disasterType,
                 test_type: testType,
                 custom_params: customParams
@@ -89,15 +101,15 @@ function SimulationModal({ open, onClose }) {
             <DialogTitle>🧪 模拟预警测试</DialogTitle>
             <DialogContent>
                 <Box sx={{ py: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {/* 目标群组 */}
+                    {/* 目标会话 */}
                     <TextField
                         fullWidth
-                        label="目标群组"
-                        placeholder="留空发送到第一个配置的群组"
+                        label="目标会话"
+                        placeholder="留空发送到第一个配置的会话"
                         value={targetGroup}
                         onChange={(e) => setTargetGroup(e.target.value)}
                         size="small"
-                        helperText="可选,指定要发送到的群组ID"
+                        helperText="可选,指定要发送到的会话"
                     />
 
                     <Divider />

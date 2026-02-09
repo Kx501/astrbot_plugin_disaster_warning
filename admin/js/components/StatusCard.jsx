@@ -1,16 +1,20 @@
 const { Box, Typography } = MaterialUI;
 
+/**
+ * 系统状态卡片组件
+ * 展示核心服务的运行状态、运行时长以及活跃连接数
+ */
 function StatusCard() {
     const { state } = useAppContext();
     const { status } = state;
 
     return (
-        <div className="card">
+        <div className="card" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
-                <div style={{ 
-                    width: '40px', 
-                    height: '40px', 
-                    borderRadius: '10px', 
+                <div style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '10px',
                     background: 'rgba(59, 130, 246, 0.1)',
                     display: 'flex',
                     alignItems: 'center',
@@ -20,11 +24,11 @@ function StatusCard() {
                 <Typography variant="h6" sx={{ fontWeight: 700 }}>服务状态</Typography>
             </Box>
 
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, justifyContent: 'center' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography variant="body2" sx={{ opacity: 0.7, fontWeight: 500 }}>运行状态</Typography>
                     <span className={`badge ${status.running ? 'badge-success' : 'badge-error'}`}>
-                        {status.running ? 'Running' : 'Stopped'}
+                        {status.running ? '运行中' : '已停止'}
                     </span>
                 </div>
                 

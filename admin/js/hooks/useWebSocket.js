@@ -27,7 +27,9 @@ function useWebSocket() {
                 const statusUpdate = {
                     running: data.status.running,
                     activeConnections: data.status.active_connections,
-                    totalConnections: data.status.total_connections
+                    totalConnections: data.status.total_connections,
+                    // 确保 version 被正确提取，如果为空则保留原值或使用默认值
+                    version: data.status.version || state.status.version
                 };
 
                 if (data.status.start_time) {

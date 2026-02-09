@@ -14,13 +14,23 @@ const CONFIG_ICONS = {
     push_frequency_control: '⏱️',
     strategies: '🎯',
     telemetry_config: '📊',
-    weather_config: '☁️',
+    weather_config: '⛈️',
     web_admin: '💻',
     websocket_config: '🔌',
     debug_config: '🐛'
 };
 
-// 配置字段渲染组件
+/**
+ * 配置字段渲染组件
+ * 根据后端返回的 Schema 动态渲染不同类型的输入控件
+ *
+ * @param {Object} props
+ * @param {string} props.fieldKey - 字段键名
+ * @param {Object} props.schema - 字段 Schema 定义
+ * @param {any} props.value - 当前值
+ * @param {Function} props.onChange - 值变更回调
+ * @param {number} props.depth - 嵌套深度 (用于缩进和样式)
+ */
 function ConfigField({ fieldKey, schema, value, onChange, depth = 0 }) {
     const [localValue, setLocalValue] = useState(value);
 
@@ -350,7 +360,11 @@ function ConfigField({ fieldKey, schema, value, onChange, depth = 0 }) {
     );
 }
 
-// 主配置渲染器
+/**
+ * 主配置渲染器组件
+ * 负责加载、显示和保存插件的完整配置
+ * 包含了配置的获取、状态管理和保存逻辑
+ */
 function ConfigRenderer() {
     const [schema, setSchema] = useState(null);
     const [config, setConfig] = useState(null);

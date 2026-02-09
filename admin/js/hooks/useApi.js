@@ -1,6 +1,11 @@
+/**
+ * API 请求 Hook
+ * 封装了所有与后端 REST API 交互的方法
+ */
 function useApi() {
     const API_BASE = '/api';
 
+    // 通用数据获取函数，处理错误和JSON解析
     const fetchData = async (endpoint, options = {}) => {
         const response = await fetch(`${API_BASE}${endpoint}`, options);
         if (!response.ok) {

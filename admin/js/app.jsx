@@ -1,10 +1,22 @@
 const { ThemeProvider, createTheme, CssBaseline, Box, Container } = MaterialUI;
-const { useState, useMemo } = React;
+const { useState, useMemo, useEffect } = React;
 
+/**
+ * 应用程序根组件
+ * 负责主题配置、路由（视图切换）以及全局状态初始化
+ */
 function App() {
     const { state } = useAppContext();
-    const [currentView, setCurrentView] = useState('status');
+    // 从 localStorage 初始化 currentView，默认为 'status'
+    const [currentView, setCurrentView] = useState(() => {
+        return localStorage.getItem('currentView') || 'status';
+    });
     const [showSimulation, setShowSimulation] = useState(false);
+
+    // 监听 currentView 变化并保存到 localStorage
+    useEffect(() => {
+        localStorage.setItem('currentView', currentView);
+    }, [currentView]);
 
     // 使用WebSocket Hook
     useWebSocket();

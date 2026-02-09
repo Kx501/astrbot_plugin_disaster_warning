@@ -1,5 +1,9 @@
 const { Box, Typography } = MaterialUI;
 
+/**
+ * 配置管理视图
+ * 提供插件参数的可视化配置界面
+ */
 function ConfigView() {
     return (
         <Box>

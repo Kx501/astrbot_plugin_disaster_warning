@@ -1,11 +1,18 @@
 const { Box, Typography } = MaterialUI;
 
-function StatsCard() {
+/**
+ * 统计信息卡片组件
+ * 展示系统记录的各类事件总数，包括地震、预警、气象和海啸
+ *
+ * @param {Object} props
+ * @param {Object} props.style - 自定义样式对象
+ */
+function StatsCard({ style }) {
     const { state } = useAppContext();
     const { stats } = state;
 
     return (
-        <div className="card">
+        <div className="card" style={style}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
                 <div style={{ 
                     width: '40px', 
@@ -21,8 +28,8 @@ function StatsCard() {
             </Box>
 
             <Box sx={{ py: 1 }}>
-                <Typography variant="h2" sx={{ 
-                    fontWeight: 800, 
+                <Typography variant="h2" sx={{
+                    fontWeight: 800,
                     color: 'var(--md-sys-color-primary)',
                     lineHeight: 1,
                     letterSpacing: '-2px'
@@ -30,22 +37,28 @@ function StatsCard() {
                     {stats.totalEvents}
                 </Typography>
                 <Typography variant="body2" sx={{ opacity: 0.6, fontWeight: 600, mt: 1, ml: 0.5 }}>
-                    TOTAL EVENTS
+                    事件总数
                 </Typography>
             </Box>
 
-            <Box sx={{ display: 'flex', gap: 2, mt: 3, pt: 2, borderTop: '1px solid var(--md-sys-color-outline-variant)' }}>
-                <Box sx={{ flex: 1 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2, mt: 3, pt: 2, borderTop: '1px solid var(--md-sys-color-outline-variant)' }}>
+                <Box>
                     <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>{stats.earthquakeCount}</Typography>
-                    <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 600 }}>EARTHQUAKE</Typography>
+                    <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 600 }}>地震事件</Typography>
                 </Box>
-                <Box sx={{ flex: 1 }}>
-                    <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>{stats.tsunamiCount}</Typography>
-                    <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 600 }}>TSUNAMI</Typography>
+                <Box>
+                    <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>
+                        {(stats.warningCount !== undefined && stats.warningCount !== null) ? stats.warningCount : '-'}
+                    </Typography>
+                    <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 600 }}>地震预警</Typography>
                 </Box>
-                <Box sx={{ flex: 1 }}>
+                <Box>
                     <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>{stats.weatherCount}</Typography>
-                    <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 600 }}>WEATHER</Typography>
+                    <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 600 }}>气象预警</Typography>
+                </Box>
+                <Box>
+                    <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>{stats.tsunamiCount}</Typography>
+                    <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 600 }}>海啸预警</Typography>
                 </Box>
             </Box>
         </div>
