@@ -1,19 +1,34 @@
 const { createContext, useContext, useReducer, useEffect } = React;
 
-// 初始状态
+/**
+ * 应用全局状态上下文
+ * 管理应用的核心数据，包括运行状态、统计信息、连接状态和事件列表
+ */
+
+// 初始状态定义
 const initialState = {
+    // 系统核心状态
     status: {
         running: false,
         uptime: '--',
         startTime: null,
         activeConnections: 0,
-        totalConnections: 0
+        totalConnections: 0,
+        version: '未知版本'
     },
     stats: {
         totalEvents: 0,
         earthquakeCount: 0,
+        warningCount: 0,
         tsunamiCount: 0,
-        weatherCount: 0
+        weatherCount: 0,
+        maxMagnitude: null,
+        earthquakeRegions: [],
+        weatherRegions: [],
+        weatherLevels: [],
+        weatherTypes: [],
+        dataSources: [],
+        logStats: null
     },
     connections: {},
     events: [],
@@ -29,13 +44,67 @@ function appReducer(state, action) {
             return { ...state, status: { ...state.status, ...action.payload } };
         case 'UPDATE_STATS':
             const stats = action.payload;
+            
+            // 处理地震地区数据
+            const eqRegions = [];
+            if (stats.earthquake_stats && stats.earthquake_stats.by_region) {
+                Object.entries(stats.earthquake_stats.by_region).forEach(([region, count]) => {
+                    eqRegions.push({ region, count });
+                });
+                eqRegions.sort((a, b) => b.count - a.count);
+            }
+
+            // 处理气象数据
+            const wRegions = [];
+            const wTypes = [];
+            const wLevels = [];
+            
+            if (stats.weather_stats) {
+                if (stats.weather_stats.by_region) {
+                    Object.entries(stats.weather_stats.by_region).forEach(([region, count]) => {
+                        wRegions.push({ region, count });
+                    });
+                    wRegions.sort((a, b) => b.count - a.count);
+                }
+                if (stats.weather_stats.by_type) {
+                    Object.entries(stats.weather_stats.by_type).forEach(([type, count]) => {
+                        wTypes.push({ type, count });
+                    });
+                    wTypes.sort((a, b) => b.count - a.count);
+                }
+                if (stats.weather_stats.by_level) {
+                    Object.entries(stats.weather_stats.by_level).forEach(([level, count]) => {
+                        wLevels.push({ level, count });
+                    });
+                    // 按数量排序
+                    wLevels.sort((a, b) => b.count - a.count);
+                }
+            }
+
+            // 处理数据源统计
+            const dSources = [];
+            if (stats.by_source) {
+                Object.entries(stats.by_source).forEach(([source, count]) => {
+                    dSources.push({ source, count });
+                });
+                dSources.sort((a, b) => b.count - a.count);
+            }
+
             return {
                 ...state,
                 stats: {
                     totalEvents: stats.total_events || 0,
                     earthquakeCount: (stats.by_type && stats.by_type.earthquake) || 0,
+                    warningCount: (stats.by_type && typeof stats.by_type.earthquake_warning !== 'undefined') ? Number(stats.by_type.earthquake_warning) : 0,
                     tsunamiCount: (stats.by_type && stats.by_type.tsunami) || 0,
-                    weatherCount: (stats.by_type && stats.by_type.weather_alarm) || 0
+                    weatherCount: (stats.by_type && stats.by_type.weather_alarm) || 0,
+                    maxMagnitude: (stats.earthquake_stats && stats.earthquake_stats.max_magnitude) || null,
+                    earthquakeRegions: eqRegions,
+                    weatherRegions: wRegions,
+                    weatherTypes: wTypes,
+                    weatherLevels: wLevels,
+                    dataSources: dSources,
+                    logStats: stats.log_stats || null
                 },
                 events: stats.recent_pushes || [],
                 magnitudeDistribution: (stats.earthquake_stats && stats.earthquake_stats.by_magnitude) || {}
@@ -64,7 +133,36 @@ function AppProvider({ children }) {
         localStorage.setItem('theme', state.theme);
     }, [state.theme]);
 
+    // 初始化时获取一次状态以确保版本号等静态信息被加载
+    useEffect(() => {
+        fetch('/api/status')
+            .then(res => res.json())
+            .then(data => {
+                const statusUpdate = {
+                    running: data.running,
+                    activeConnections: data.active_connections,
+                    totalConnections: data.total_connections,
+                    uptime: data.uptime
+                };
+
+                // version 可能不存在于旧版接口返回中，但在新版应该有
+                // 如果没有，就保持初始值
+                if (data.version) {
+                    statusUpdate.version = data.version;
+                }
+                
+                // 处理 start_time
+                if (data.start_time) {
+                    statusUpdate.startTime = new Date(data.start_time);
+                }
+
+                dispatch({ type: 'UPDATE_STATUS', payload: statusUpdate });
+            })
+            .catch(err => console.error('Failed to fetch initial status:', err));
+    }, []);
+
     // 运行时长计时器
+    // 每秒更新一次 uptime 显示，格式化为 天/小时/分/秒
     useEffect(() => {
         if (!state.status.startTime || !state.status.running) return;
 
@@ -109,3 +207,7 @@ function useAppContext() {
     }
     return context;
 }
+
+// 暴露给全局
+window.AppProvider = AppProvider;
+window.useAppContext = useAppContext;
