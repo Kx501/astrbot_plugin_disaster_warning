@@ -5,6 +5,32 @@
 <!-- markdownlint-disable MD041 -->
 # ChangeLog
 
+# 2026/02/09 v1.4.0
+
+本次更新带来了里程碑式的 **WebUI 重构**。我们移除了对 AstrBot 原生配置界面的强依赖，转而内置了一套 **全新的、独立的 React Web 管理后台**。新版管理端提供了可视化的状态监控仪表盘、精美的统计图表、实时的事件流列表以及更强大的模拟测试工具，将插件的易用性提升到了全新的高度。
+
+## 🚀 What's Changed
+
+### ✨ New Features (新功能)
+
+- **WebUI 重构**:
+  - **独立管理后台**: 引入了全新的 React 单页应用 (SPA)，通过 FastAPI 提供后端服务，实现了前后端分离的现代化管理界面 by @DBJD-CR
+  - **仪表盘 (Dashboard)**: 新增实时状态监控看板，可视化展示系统运行状态、活跃连接数、核心统计指标及快捷操作入口 by @DBJD-CR
+  - **可视化统计**: 引入了 Recharts 图表库，提供震级分布直方图、气象预警类型饼图等丰富的可视化统计报表 by @DBJD-CR
+  - **事件流列表**: 新增可折叠的实时事件流列表，支持按地震、海啸、气象等类型筛选，并能直观展示同一事件的历史报数更新 by @DBJD-CR
+  - **模拟测试工具**: 全新设计的模拟预警弹窗，支持自定义经纬度、震级、深度等参数，并提供一键获取当前位置功能，方便用户进行推送测试 by @DBJD-CR
+- **后端服务**:
+  - **FastAPI 集成**: 在核心层新增 `web_server.py`，基于 FastAPI 和 Uvicorn 构建了高性能的异步 Web 服务器 by @DBJD-CR
+  - **WebSocket 推送**: 实现了管理端与插件后端的双向 WebSocket 通信，支持实时推送状态更新、新事件通知和日志流 by @DBJD-CR
+  - **API 封装**: 封装了标准化的 RESTful API 接口，涵盖状态查询、配置管理、统计获取及模拟触发等功能 by @DBJD-CR
+
+### 📚 Documentation (文档)
+
+- **注释补全**: 对所有新增的 WebUI 组件（React/JSX）和后端服务代码进行了详尽的中文注释补充，极大降低了二次开发门槛 by @DBJD-CR
+- **README 更新**: 更新了项目文档的目录结构部分，补充了 `admin/` 前端资源目录和 `core/web_server.py` 的说明 by @DBJD-CR
+
+---
+
 # 2026/02/05 v1.3.9
 
 本次更新修复了 **中国地震预警网省级预警 (CEA-PR)** 数据源无法正常格式化的问题，并引入了 **启动自检机制** 以防止类似问题再次发生。同时，本次更新还包含大量的 **稳定性增强**、**性能优化** 与 **代码重构**，修复了多个潜在的资源泄露风险，并对底层网络连接与文件 I/O 进行了深度加固。
@@ -58,6 +84,10 @@
 - **清理策略**:
   - 改进了临时文件清理逻辑，增加了文件数量上限检查（默认 256 个），并优先清理最旧的文件 by @DBJD-CR
   - 实现了过期事件的自动清理机制，防止内存无限增长 by @DBJD-CR
+
+---
+
+**Full Changelog**: https://github.com/DBJD-CR/astrbot_plugin_disaster_warning/compare/v1.3.8...v1.3.9
 
 ---
 
@@ -243,7 +273,7 @@ Hot Fix For v1.3.5
 ### 📚 Documentation (文档)
 
 - **Badges**: 新增 **高仿 GitHub Trending** 与 **Plugin Market Rank** 徽章，排面拉满 by @DBJD-CR
-- **Changelog**: 初始提交 - 新增符合 AstrBot v4.12.0+ 规范的 **插件更新日志文档** (`CHANGELOG.md`)，支持在 AstrBot WebUI 直接查看更新日志，并在插件更新完成时自动弹出窗口展示 by @DBJD-CR
+- **Changelog**: 初始提交 - 新增符合 AstrBot v4.11.2+ 规范的 **插件更新日志文档** (`CHANGELOG.md`)，支持在 AstrBot WebUI 直接查看更新日志，并在插件更新完成时自动弹出窗口展示 by @DBJD-CR
 - **Guide**: 更新适用于 v1.3.5 的 `README.md` 和 `CONTRIBUTING.md`，以及众多插件文件中的注释 by @DBJD-CR
 
 ---
