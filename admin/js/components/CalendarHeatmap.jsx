@@ -33,20 +33,28 @@ function CalendarHeatmap({ style }) {
         const weeksArr = [];
         let currentWeek = [];
         
-        // 补齐第一周前面的空白 (如果不是周一)
-        // 这里的 data 已经是按时间顺序排列的
         const firstDate = new Date(data[0].date);
-        let firstDay = firstDate.getDay(); // 0 是周日
-        if (firstDay === 0) firstDay = 7; // 调整为 1-7 (周一到周日)
+        const firstDay = firstDate.getDay(); // 0 (Sun) - 6 (Sat)
         
-        // 我们希望每周从周日或周一开始？GitHub 是从周日开始的。
-        // 为了简单，我们直接按 7 天一组切分
+        // 补齐第一周前面的空白 (GitHub 风格从周日开始)
+        for (let i = 0; i < firstDay; i++) {
+            currentWeek.push(null);
+        }
+        
         for (let i = 0; i < data.length; i++) {
             currentWeek.push(data[i]);
-            if (currentWeek.length === 7 || i === data.length - 1) {
+            if (currentWeek.length === 7) {
                 weeksArr.push(currentWeek);
                 currentWeek = [];
             }
+        }
+        
+        // 补齐最后一周后面的空白
+        if (currentWeek.length > 0) {
+            while (currentWeek.length < 7) {
+                currentWeek.push(null);
+            }
+            weeksArr.push(currentWeek);
         }
         
         return weeksArr;
@@ -92,17 +100,17 @@ function CalendarHeatmap({ style }) {
                                 {week.map((day, dIndex) => (
                                     <div
                                         key={dIndex}
-                                        title={`${day.date}: ${day.count} 次预警`}
+                                        title={day ? `${day.date}: ${day.count} 次预警` : ''}
                                         style={{
                                             width: '13px',
                                             height: '13px',
                                             borderRadius: '2px',
-                                            backgroundColor: getColor(day.count),
+                                            backgroundColor: day ? getColor(day.count) : 'transparent',
                                             transition: 'transform 0.1s',
-                                            cursor: 'pointer'
+                                            cursor: day ? 'pointer' : 'default'
                                         }}
-                                        onMouseEnter={(e) => e.target.style.transform = 'scale(1.2)'}
-                                        onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+                                        onMouseEnter={(e) => day && (e.target.style.transform = 'scale(1.2)')}
+                                        onMouseLeave={(e) => day && (e.target.style.transform = 'scale(1)')}
                                     ></div>
                                 ))}
                             </div>

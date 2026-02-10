@@ -213,7 +213,7 @@ function TrendChart({ style }) {
             </div>
             
             {!loading && data.length > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', mt: 1, opacity: 0.5 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', opacity: 0.5 }}>
                     <Typography variant="caption">{data[0].time.split(' ')[1] || data[0].time}</Typography>
                     <Typography variant="caption">{data[data.length - 1].time.split(' ')[1] || data[data.length - 1].time}</Typography>
                 </div>

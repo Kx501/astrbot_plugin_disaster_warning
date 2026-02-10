@@ -10,7 +10,7 @@ function NewsTicker({ style }) {
     const tickerItems = useMemo(() => {
         if (!events || !Array.isArray(events) || events.length === 0) return [];
         return events.slice(0, 5).map(event => ({
-            id: event.event_id || Math.random().toString(),
+            id: event.event_id || `${event.time || event.timestamp}-${event.type}`,
             time: event.time || event.timestamp,
             type: event.type,
             desc: event.description || '无详细描述',

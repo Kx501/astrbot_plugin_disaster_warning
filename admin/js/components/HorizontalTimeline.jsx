@@ -23,8 +23,15 @@ function HorizontalTimeline({ style }) {
             return false;
         });
 
-        // 取最近 5 个，并按时间倒序排列 (左边是最新的)
-        return majorEvents.slice(0, 5);
+        // 按时间倒序排列 (左边是最新的)
+        return majorEvents
+            .slice()
+            .sort((a, b) => {
+                const timeA = new Date(a.time || a.timestamp).getTime();
+                const timeB = new Date(b.time || b.timestamp).getTime();
+                return timeB - timeA;
+            })
+            .slice(0, 5);
     }, [events]);
 
     if (timelineItems.length === 0) {

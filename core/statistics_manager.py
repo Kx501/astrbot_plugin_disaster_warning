@@ -15,13 +15,16 @@ from ..models.models import (
     WeatherAlarmData,
 )
 from ..utils.formatters.weather import COLOR_LEVEL_EMOJI, SORTED_WEATHER_TYPES
+from ..utils.time_converter import TimeConverter
 from .event_deduplicator import EventDeduplicator
 
 
 class StatisticsManager:
     """灾害预警统计管理器"""
 
-    def __init__(self):
+    def __init__(self, config: dict[str, Any] = None):
+        self.config = config or {}
+        self.display_timezone = self.config.get("display_timezone", "UTC+8")
         self.data_dir = StarTools.get_data_dir("astrbot_plugin_disaster_warning")
         self.stats_file = self.data_dir / "statistics.json"
 
@@ -299,15 +302,14 @@ class StatisticsManager:
             if is_reliable:
                 current_max = self.stats["earthquake_stats"].get("max_magnitude")
                 if current_max is None or mag > current_max.get("value", 0):
+                    # 确保时间为 UTC
+                    event_time = self._to_utc_aware(data.shock_time)
+                        
                     self.stats["earthquake_stats"]["max_magnitude"] = {
                         "value": mag,
                         "event_id": data.id,
                         "place_name": data.place_name,
-                        "time": (
-                            data.shock_time.isoformat()
-                            if data.shock_time
-                            else datetime.now(timezone.utc).isoformat()
-                        ),
+                        "time": event_time.isoformat(),
                         "source": data.source.value,  # 记录来源以便调试
                     }
 
@@ -343,10 +345,23 @@ class StatisticsManager:
         region = self._extract_region(headline)
         self.stats["weather_stats"]["by_region"][region] += 1
 
-    def _record_time_series(self, event: DisasterEvent):
-        """记录时间序列统计"""
-        from datetime import datetime, timezone
+    def _to_utc_aware(self, dt: datetime | None) -> datetime:
+        """将 datetime 统一规范为带 UTC 时区信息的对象"""
+        if dt is None:
+            return datetime.now(timezone.utc)
         
+        if dt.tzinfo is None:
+            # 如果缺少时区信息，假设为 UTC
+            return dt.replace(tzinfo=timezone.utc)
+        
+        # 统一转换为 UTC
+        return dt.astimezone(timezone.utc)
+
+    def _record_time_series(self, event: DisasterEvent):
+        """
+        记录时间序列统计。
+        所有统计分桶键均使用 UTC 时间，以确保在跨时区环境下的统计一致性。
+        """
         # 使用事件时间或当前时间
         event_time = None
         if isinstance(event.data, EarthquakeData):
@@ -354,8 +369,8 @@ class StatisticsManager:
         elif isinstance(event.data, (WeatherAlarmData, TsunamiData)):
             event_time = event.data.issue_time
         
-        if not event_time:
-            event_time = datetime.now(timezone.utc)
+        # 确保 event_time 是带 UTC 时区信息的 datetime 对象
+        event_time = self._to_utc_aware(event_time)
         
         # 小时级别的key (用于24小时/7天趋势图)
         hour_key = event_time.strftime("%Y-%m-%d %H:00")
@@ -618,16 +633,17 @@ class StatisticsManager:
         
         result = []
         now = datetime.now(timezone.utc)
-        tz_beijing = timezone(timedelta(hours=8))
+        # 使用配置的目标时区
+        target_tz = TimeConverter._get_timezone(self.display_timezone)
         
         for i in range(hours):
             time_point = now - timedelta(hours=hours - i - 1)
             # 统计键名仍使用 UTC (保持与存储一致)
             hour_key_utc = time_point.strftime("%Y-%m-%d %H:00")
             
-            # 展示时间转换为 UTC+8
-            time_point_beijing = time_point.astimezone(tz_beijing)
-            display_time = time_point_beijing.strftime("%m-%d %H:00")
+            # 展示时间转换为目标时区
+            time_point_local = time_point.astimezone(target_tz)
+            display_time = time_point_local.strftime("%m-%d %H:00")
             
             count = self.stats["hourly_counts"].get(hour_key_utc, 0)
             result.append({
@@ -643,16 +659,17 @@ class StatisticsManager:
         
         result = []
         now = datetime.now(timezone.utc)
-        tz_beijing = timezone(timedelta(hours=8))
+        # 使用配置的目标时区
+        target_tz = TimeConverter._get_timezone(self.display_timezone)
         
         for i in range(days):
             date_point = now - timedelta(days=days - i - 1)
             # 统计键名使用 UTC 日期 (保持与存储一致)
             day_key_utc = date_point.strftime("%Y-%m-%d")
             
-            # 获取该点对应的北京时间日期
-            date_point_beijing = date_point.astimezone(tz_beijing)
-            display_date = date_point_beijing.strftime("%Y-%m-%d")
+            # 获取该点对应的本地时间日期
+            date_point_local = date_point.astimezone(target_tz)
+            display_date = date_point_local.strftime("%Y-%m-%d")
             
             count = self.stats["daily_counts"].get(day_key_utc, 0)
             result.append({
