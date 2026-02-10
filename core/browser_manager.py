@@ -17,13 +17,15 @@ from astrbot.api import logger
 class BrowserManager:
     """浏览器管理器 - 单例浏览器 + 页面对象池"""
 
-    def __init__(self, pool_size: int = 2, telemetry=None):
+    def __init__(self, pool_size: int = 2, telemetry=None, mode: str = "local", server_url: str = ""):
         """
         初始化浏览器管理器
 
         Args:
             pool_size: 页面池大小，默认 2 个页面
             telemetry: 遥测管理器（可选）
+            mode: 运行模式，"local" 或 "remote"
+            server_url: 远程 Playwright 服务器地址（mode="remote" 时必填）
         """
         self.pool_size = pool_size
         self._browser: Browser | None = None
@@ -35,6 +37,8 @@ class BrowserManager:
         self._initialized = False
         self._closed = False
         self._telemetry = telemetry
+        self._mode = mode
+        self._server_url = server_url
 
     async def initialize(self):
         """初始化浏览器和页面池"""
@@ -44,16 +48,43 @@ class BrowserManager:
                 return
 
             try:
-                logger.info("[灾害预警] 正在启动浏览器...")
+                logger.info(f"[灾害预警] 正在启动浏览器（模式：{self._mode}）...")
                 start_time = time.time()
 
                 # 启动 Playwright
                 self._playwright = await async_playwright().start()
 
-                # 启动浏览器
-                self._browser = await self._playwright.chromium.launch(
-                    args=["--no-sandbox", "--disable-setuid-sandbox"]
-                )
+                # 根据模式选择启动方式
+                if self._mode == "remote":
+                    if not self._server_url:
+                        raise ValueError("远程模式下必须配置 playwright_server_url")
+                    
+                    logger.info(f"[灾害预警] 连接到远程 Playwright 服务: {self._server_url}")
+                    
+                    # 判断连接类型
+                    if self._server_url.startswith("ws://") or self._server_url.startswith("wss://"):
+                        # WebSocket 连接 (Playwright Server)
+                        self._browser = await self._playwright.chromium.connect(
+                            ws_endpoint=self._server_url
+                        )
+                    elif self._server_url.startswith("http://") or self._server_url.startswith("https://"):
+                        # CDP Endpoint 连接
+                        self._browser = await self._playwright.chromium.connect_over_cdp(
+                            endpoint_url=self._server_url
+                        )
+                    else:
+                        raise ValueError(
+                            f"不支持的服务器地址格式: {self._server_url}。"
+                            "请使用 ws://host:port 或 http://host:port"
+                        )
+                    
+                    logger.info("[灾害预警] 远程浏览器连接成功")
+                else:
+                    # 本地模式：启动本地浏览器
+                    self._browser = await self._playwright.chromium.launch(
+                        args=["--no-sandbox", "--disable-setuid-sandbox"]
+                    )
+                    logger.info("[灾害预警] 本地浏览器启动成功")
 
                 # 预创建页面对象池
                 for i in range(self.pool_size):

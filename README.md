@@ -344,6 +344,15 @@
     playwright install --with-deps chromium
     ```
 
+  - **推荐方案**：使用 **远程 Playwright** 避免在容器内安装浏览器。在配置中设置：
+    ```json
+    {
+      "playwright_mode": "remote",
+      "playwright_server_url": "ws://192.168.1.100:3000"
+    }
+    ```
+    然后在宿主机或其他服务器上运行：`npx playwright run-server --port 3000 --host 0.0.0.0`
+
 - **存储空间 (Storage)**：
   - 生成的图片文件会临时存储在插件的数据目录下的 `temp` 文件夹中。
   - **极光主题 (Aurora)**：单张图片约 **600KB**。
@@ -1515,8 +1524,9 @@ graph TD
 >**A**: 开启卡片渲染会启动一个无头浏览器实例。
 >
 > 1. **硬件要求**：建议在内存大于 1GB 的服务器上开启此功能。
-> 2. **手动清理**：如果内存极度紧张，建议关闭 `use_global_quake_card` 回退到纯文本模式。
-> 3. **Linux 依赖**：在部分 Linux 发行版上，可能需要运行 `playwright install-deps` 来安装浏览器所需的系统库。
+> 2. **远程 Playwright**：推荐使用远程 Playwright 服务，将浏览器运行在容器外部，避免每次更新后重新安装浏览器。在配置中设置 `"playwright_mode": "remote"` 和 `"playwright_server_url": "ws://your-server:3000"`。启动远程服务：`npx playwright run-server --port 3000`。
+> 3. **手动清理**：如果内存极度紧张，建议关闭 `use_global_quake_card` 回退到纯文本模式。
+> 4. **Linux 依赖**：在部分 Linux 发行版上，可能需要运行 `playwright install-deps` 来安装浏览器所需的系统库。
 
 **Q: 为什么同一地震会收到不同数据源的多次推送？**
 

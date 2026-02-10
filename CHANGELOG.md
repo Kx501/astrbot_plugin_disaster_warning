@@ -5,6 +5,25 @@
 <!-- markdownlint-disable MD041 -->
 # ChangeLog
 
+# 2026/02/10 v1.4.0
+
+本次更新新增了 **远程 Playwright 支持**，允许用户将浏览器渲染服务部署在容器外部，避免在容器内安装和维护浏览器依赖。适用于容器化部署场景和资源共享需求。
+
+## 🚀 What's Changed
+
+### ✨ New Features (新功能)
+
+- **远程 Playwright 支持**: 
+  - 新增 `playwright_mode` 配置项，支持 `local`（本地）和 `remote`（远程）两种模式 by @DBJD-CR & AI Assistant
+  - 新增 `playwright_server_url` 配置项，支持连接远程 Playwright 服务 by @DBJD-CR & AI Assistant
+  - 支持两种连接方式：WebSocket (Playwright Server) 和 CDP Endpoint by @DBJD-CR & AI Assistant
+  - 解决容器化部署时每次更新后需要重新安装浏览器的问题 by @DBJD-CR & AI Assistant
+
+### 📚 Documentation (文档)
+
+- **README**: 更新环境依赖部分，添加远程 Playwright 配置说明 by @DBJD-CR & AI Assistant
+- **FAQ**: 新增远程 Playwright 使用建议，优化内存占用相关问题的解答 by @DBJD-CR & AI Assistant
+
 # 2026/02/05 v1.3.9
 
 本次更新修复了 **中国地震预警网省级预警 (CEA-PR)** 数据源无法正常格式化的问题，并引入了 **启动自检机制** 以防止类似问题再次发生。同时，本次更新还包含大量的 **稳定性增强**、**性能优化** 与 **代码重构**，修复了多个潜在的资源泄露风险，并对底层网络连接与文件 I/O 进行了深度加固。
