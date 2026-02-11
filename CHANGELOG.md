@@ -5,7 +5,7 @@
 <!-- markdownlint-disable MD041 -->
 # ChangeLog
 
-# 2026/02/09 v1.4.0
+# 2026/02/12 v1.4.0
 
 本次更新带来了里程碑式的 **WebUI 重构**。我们移除了对 AstrBot 原生配置界面的强依赖，转而内置了一套 **全新的、独立的 React Web 管理后台**。新版管理端提供了可视化的状态监控仪表盘、精美的统计图表、实时的事件流列表以及更强大的模拟测试工具，将插件的易用性提升到了全新的高度。
 
@@ -13,6 +13,9 @@
 
 ### ✨ New Features (新功能)
 
+- **远程 Playwright 支持**: 
+  - 新增 `playwright_mode` 配置项，支持 `local`（本地）和 `remote`（远程）两种模式 by @Aloys233 in #72
+  - 新增 `playwright_server_url` 配置项，支持连接远程 Playwright 服务 by @Aloys233 in #72
 - **WebUI 重构**:
   - **独立管理后台**: 引入了全新的 React 单页应用 (SPA)，通过 FastAPI 提供后端服务，实现了前后端分离的现代化管理界面 by @DBJD-CR
   - **仪表盘 (Dashboard)**: 新增实时状态监控看板，可视化展示系统运行状态、活跃连接数、核心统计指标及快捷操作入口 by @DBJD-CR

@@ -47,7 +47,7 @@ class DisasterWarningService:
         self.message_logger = MessageLogger(config, "disaster_warning")
 
         # 初始化统计管理器
-        self.statistics_manager = StatisticsManager()
+        self.statistics_manager = StatisticsManager(config)
 
         # 遥测管理器引用 (由 main.py 注入)
         self._telemetry: TelemetryManager | None = None

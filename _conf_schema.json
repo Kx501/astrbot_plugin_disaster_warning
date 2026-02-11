@@ -505,6 +505,22 @@
           "step": 1
         }
       },
+      "playwright_mode": {
+        "description": "Playwright 运行模式",
+        "type": "string",
+        "options": [
+          "local",
+          "remote"
+        ],
+        "default": "local",
+        "hint": "local: 使用本地浏览器（需安装 playwright）；remote: 连接远程 Playwright 服务（无需本地安装浏览器）"
+      },
+      "playwright_server_url": {
+        "description": "远程 Playwright 服务器地址",
+        "type": "string",
+        "hint": "远程模式时必填。支持多种格式：ws://host:port（Playwright Server）、http://host:port（CDP Endpoint）。示例：ws://192.168.1.100:3000 或 http://192.168.1.100:9222",
+        "default": ""
+      },
       "browser_pool_size": {
         "description": "浏览器页面池大小",
         "type": "int",
