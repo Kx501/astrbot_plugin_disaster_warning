@@ -1,5 +1,5 @@
-const { Box, TextField, Switch, FormControlLabel, Typography, Button, Accordion, AccordionSummary, AccordionDetails, Divider, Paper, Chip } = MaterialUI;
-const { useState, useEffect } = React;
+const { Box, TextField, Switch, FormControlLabel, Typography, Button, Accordion, AccordionSummary, AccordionDetails, Divider, Paper, Chip, Slider, MenuItem } = MaterialUI;
+const { useState, useEffect, useRef, useLayoutEffect } = React;
 
 // 辅助函数：获取所有可展开的路径
 const getAllExpandablePaths = (schema, prefix = '') => {
@@ -73,9 +73,7 @@ function ConfigField({ fieldKey, schema, value, onChange, depth = 0, path = '', 
                     my: depth === 0 ? 1 : 0.75,
                     overflow: 'hidden',
                     border: depth === 0 ? 1.5 : 1,
-                    borderColor: depth === 0 ? 'primary.main' : 'divider',
-                    borderLeft: depth > 0 ? '3px solid' : undefined,
-                    borderLeftColor: depth > 0 ? 'primary.light' : undefined,
+                    borderColor: depth === 0 ? 'primary.main' : 'primary.light',
                     borderRadius: 2,
                     background: depth === 0
                         ? 'linear-gradient(135deg, rgba(0, 90, 193, 0.04) 0%, rgba(0, 90, 193, 0.01) 100%)'
@@ -148,8 +146,8 @@ function ConfigField({ fieldKey, schema, value, onChange, depth = 0, path = '', 
                             )}
                         </Box>
                     </AccordionSummary>
-                    <AccordionDetails sx={{ px: 2.5, py: 1.5, bgcolor: 'background.default' }}>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                    <AccordionDetails sx={{ px: 3, py: 0, bgcolor: 'background.default' }}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                             {Object.entries(schema.items).map(([key, subSchema]) => (
                                 <ConfigField
                                     key={key}
@@ -170,128 +168,167 @@ function ConfigField({ fieldKey, schema, value, onChange, depth = 0, path = '', 
         );
     }
 
+    // 公共描述区域组件
+    const DescriptionSection = ({ flex = 8 }) => (
+        <Box sx={{ flex: flex, pr: 2, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'text.primary', fontSize: '0.9rem', lineHeight: 1.3 }}>
+                {schema.description || fieldKey}
+            </Typography>
+            {schema.hint && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, lineHeight: 1.3 }}>
+                    {schema.hint}
+                </Typography>
+            )}
+        </Box>
+    );
+
     // 布尔类型 (后端使用 'bool')
     if (schema.type === 'bool' || schema.type === 'boolean') {
         return (
-            <Paper
-                elevation={0}
-                sx={{
-                    my: 0.5,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    borderRadius: 1.5,
-                    overflow: 'hidden',
-                    transition: 'all 0.2s',
-                    '&:hover': {
-                        borderColor: 'primary.main',
-                        boxShadow: '0 1px 4px rgba(0, 90, 193, 0.1)'
-                    }
-                }}
-            >
-                <FormControlLabel
-                    labelPlacement="start"
-                    control={
-                        <Switch
-                            checked={localValue !== undefined ? localValue : (schema.default || false)}
-                            onChange={(e) => handleChange(e.target.checked)}
-                            sx={{
-                                width: 52,
-                                height: 32,
+            <Box sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                py: 1.5,
+                borderBottom: depth === 0 ? 'none' : '1px solid',
+                borderColor: 'divider',
+                '&:last-child': { borderBottom: 'none' }
+            }}>
+                <DescriptionSection flex={8} />
+                <Box sx={{ flex: 2, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                    <Switch
+                        checked={localValue !== undefined ? localValue : (schema.default || false)}
+                        onChange={(e) => handleChange(e.target.checked)}
+                        sx={{
+                            width: 52,
+                            height: 32,
+                            padding: 0,
+                            '& .MuiSwitch-switchBase': {
                                 padding: 0,
-                                '& .MuiSwitch-switchBase': {
-                                    padding: 0,
-                                    margin: '4px',
-                                    transitionDuration: '300ms',
-                                    '&.Mui-checked': {
-                                        transform: 'translateX(20px)',
-                                        color: '#fff',
-                                        '& + .MuiSwitch-track': {
-                                            backgroundColor: 'primary.main',
-                                            opacity: 1,
-                                            border: 0,
-                                        },
-                                        '& .MuiSwitch-thumb:before': {
-                                            content: '"✓"',
-                                            fontSize: '14px',
-                                            color: 'primary.main',
-                                        },
+                                margin: '4px',
+                                transitionDuration: '300ms',
+                                '&.Mui-checked': {
+                                    transform: 'translateX(20px)',
+                                    color: '#fff',
+                                    '& + .MuiSwitch-track': {
+                                        backgroundColor: 'primary.main',
+                                        opacity: 1,
+                                        border: 0,
                                     },
                                 },
-                                '& .MuiSwitch-thumb': {
-                                    boxSizing: 'border-box',
-                                    width: 24,
-                                    height: 24,
-                                    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
-                                    '&:before': {
-                                        content: '"×"',
-                                        position: 'absolute',
-                                        width: '100%',
-                                        height: '100%',
-                                        left: 0,
-                                        top: 0,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        fontSize: '16px',
-                                        color: '#666',
-                                        fontWeight: 'bold',
-                                    },
-                                },
-                                '& .MuiSwitch-track': {
-                                    borderRadius: 16,
-                                    backgroundColor: 'rgba(0, 0, 0, 0.12)',
-                                    opacity: 1,
-                                    transition: 'background-color 300ms',
-                                },
-                            }}
+                            },
+                            '& .MuiSwitch-thumb': {
+                                boxSizing: 'border-box',
+                                width: 24,
+                                height: 24,
+                                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+                            },
+                            '& .MuiSwitch-track': {
+                                borderRadius: 16,
+                                backgroundColor: 'rgba(0, 0, 0, 0.12)',
+                                opacity: 1,
+                                transition: 'background-color 300ms',
+                            },
+                        }}
+                    />
+                </Box>
+            </Box>
+        );
+    }
+
+    // 数值类型 (int/float)
+    if (['integer', 'int', 'number', 'float', 'double'].includes(schema.type)) {
+        const sliderConfig = schema.slider;
+        const hasRange = sliderConfig !== undefined;
+        // 如果有范围，展示 Slider，布局 5:3:2；否则回退到 8:2
+        const descFlex = hasRange ? 5 : 8;
+        
+        const min = sliderConfig?.min ?? schema.minimum;
+        const max = sliderConfig?.max ?? schema.maximum;
+        const step = sliderConfig?.step ?? (schema.type === 'integer' || schema.type === 'int' ? 1 : 0.1);
+
+        return (
+            <Box sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                py: 1.5,
+                borderBottom: depth === 0 ? 'none' : '1px solid',
+                borderColor: 'divider',
+                '&:last-child': { borderBottom: 'none' }
+            }}>
+                <DescriptionSection flex={descFlex} />
+                
+                {hasRange && (
+                    <Box sx={{ flex: 3, px: 2, display: 'flex', alignItems: 'center' }}>
+                        <Slider
+                            value={Number(localValue) || 0}
+                            onChange={(e, newValue) => setLocalValue(newValue)}
+                            onChangeCommitted={(e, newValue) => handleChange(newValue)}
+                            min={min}
+                            max={max}
+                            step={step}
+                            size="small"
+                            valueLabelDisplay="auto"
+                            sx={{ color: 'primary.main' }}
                         />
-                    }
-                    label={
-                        <Box>
-                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                {schema.description || fieldKey}
-                            </Typography>
-                            {schema.hint && (
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
-                                    {schema.hint}
-                                </Typography>
-                            )}
-                        </Box>
-                    }
-                    sx={{
-                        m: 0,
-                        p: 1.5,
-                        width: '100%',
-                        display: 'flex',
-                        justifyContent: 'space-between'
-                    }}
-                />
-            </Paper>
+                    </Box>
+                )}
+
+                <Box sx={{ flex: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                    <TextField
+                        fullWidth
+                        size="small"
+                        type="number"
+                        value={localValue !== undefined ? localValue : (schema.default || 0)}
+                        onChange={(e) => {
+                            const v = e.target.value;
+                            // 允许输入空值或负号
+                            if (v === '' || v === '-') {
+                                setLocalValue(v);
+                                return;
+                            }
+                            const num = schema.type === 'integer' || schema.type === 'int' ? parseInt(v) : parseFloat(v);
+                            handleChange(isNaN(num) ? 0 : num);
+                        }}
+                        inputProps={{
+                            min: min,
+                            max: max,
+                            step: step
+                        }}
+                        variant="outlined"
+                        sx={{
+                            '& .MuiOutlinedInput-root': {
+                                borderRadius: 1.5,
+                                bgcolor: 'background.paper',
+                                '&.Mui-focused > fieldset': { borderColor: 'primary.main' }
+                            }
+                        }}
+                    />
+                </Box>
+            </Box>
         );
     }
 
     // 列表类型 (后端使用 'list')
     if (schema.type === 'list' || schema.type === 'array') {
         return (
-            <Box sx={{ my: 1.5 }}>
-                <Box sx={{ mb: 0.75, display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                    <Box
-                        sx={{
-                            width: 3,
-                            height: 16,
-                            bgcolor: 'primary.main',
-                            borderRadius: 0.5
-                        }}
-                    />
-                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'primary.main', fontSize: '0.875rem' }}>
+            <Box sx={{
+                py: 1.5,
+                borderBottom: depth === 0 ? 'none' : '1px solid',
+                borderColor: 'divider',
+                '&:last-child': { borderBottom: 'none' }
+            }}>
+                <Box sx={{ mb: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'text.primary', fontSize: '0.9rem' }}>
                         {schema.description || fieldKey}
                     </Typography>
+                    {schema.hint && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                            {schema.hint}
+                        </Typography>
+                    )}
                 </Box>
-                {schema.hint && (
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, pl: 1.5 }}>
-                        {schema.hint}
-                    </Typography>
-                )}
                 <TextField
                     fullWidth
                     multiline
@@ -305,17 +342,7 @@ function ConfigField({ fieldKey, schema, value, onChange, depth = 0, path = '', 
                         '& .MuiOutlinedInput-root': {
                             borderRadius: 1.5,
                             bgcolor: 'background.paper',
-                            fontSize: '0.875rem',
-                            '&:hover': {
-                                '& > fieldset': { borderColor: 'primary.main' }
-                            },
-                            '&.Mui-focused': {
-                                bgcolor: 'background.default',
-                                '& > fieldset': {
-                                    borderWidth: 2,
-                                    borderColor: 'primary.main'
-                                }
-                            }
+                            '&.Mui-focused > fieldset': { borderColor: 'primary.main' }
                         }
                     }}
                 />
@@ -323,63 +350,137 @@ function ConfigField({ fieldKey, schema, value, onChange, depth = 0, path = '', 
         );
     }
 
+    // 带有选项的类型 (Select)
+    if (schema.options && Array.isArray(schema.options)) {
+        return (
+            <Box sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                py: 1.5,
+                borderBottom: depth === 0 ? 'none' : '1px solid',
+                borderColor: 'divider',
+                '&:last-child': { borderBottom: 'none' }
+            }}>
+                <DescriptionSection flex={8} />
+                <Box sx={{ flex: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                    <TextField
+                        select
+                        fullWidth
+                        size="small"
+                        value={localValue !== undefined ? localValue : (schema.default || '')}
+                        onChange={(e) => handleChange(e.target.value)}
+                        variant="outlined"
+                        SelectProps={{
+                            MenuProps: {
+                                PaperProps: {
+                                    sx: {
+                                        borderRadius: 1.5,
+                                        mt: 0.5,
+                                        boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
+                                    }
+                                }
+                            }
+                        }}
+                        sx={{
+                            '& .MuiOutlinedInput-root': {
+                                borderRadius: 1.5,
+                                bgcolor: 'background.paper',
+                                '&.Mui-focused > fieldset': { borderColor: 'primary.main' }
+                            },
+                            '& .MuiSelect-select': {
+                                textAlign: 'center',
+                                pr: '32px !important' // 给箭头图标留出空间，确保视觉居中
+                            }
+                        }}
+                    >
+                        {schema.options.map((option) => (
+                            <MenuItem key={option} value={option} sx={{ justifyContent: 'center' }}>
+                                {option}
+                            </MenuItem>
+                        ))}
+                    </TextField>
+                </Box>
+            </Box>
+        );
+    }
+
     // 字符串类型(默认)
     // 判断是否应该使用多行输入
     const shouldBeMultiline =
-        (schema.hint && schema.hint.length > 50) ||
+        (schema.hint && schema.hint.length > 100) ||
         fieldKey.includes('format') ||
         fieldKey.includes('template') ||
         fieldKey.includes('pattern') ||
         fieldKey.includes('message') ||
         fieldKey.includes('body') ||
         fieldKey.includes('content');
-
-    return (
-        <Box sx={{ my: 1.5 }}>
-            <Box sx={{ mb: 0.75, display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                <Box
+    
+    // 如果是长文本，保持上下布局；否则使用 8:2 布局
+    if (shouldBeMultiline) {
+        return (
+            <Box sx={{
+                py: 1.5,
+                borderBottom: depth === 0 ? 'none' : '1px solid',
+                borderColor: 'divider',
+                '&:last-child': { borderBottom: 'none' }
+            }}>
+                <Box sx={{ mb: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'text.primary', fontSize: '0.9rem' }}>
+                        {schema.description || fieldKey}
+                    </Typography>
+                    {schema.hint && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                            {schema.hint}
+                        </Typography>
+                    )}
+                </Box>
+                <TextField
+                    fullWidth
+                    multiline
+                    rows={3}
+                    value={localValue !== undefined ? localValue : (schema.default || '')}
+                    onChange={(e) => handleChange(e.target.value)}
+                    variant="outlined"
                     sx={{
-                        width: 3,
-                        height: 16,
-                        bgcolor: 'primary.main',
-                        borderRadius: 0.5
+                        '& .MuiOutlinedInput-root': {
+                            borderRadius: 1.5,
+                            bgcolor: 'background.paper',
+                            '&.Mui-focused > fieldset': { borderColor: 'primary.main' }
+                        }
                     }}
                 />
-                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'primary.main', fontSize: '0.875rem' }}>
-                    {schema.description || fieldKey}
-                </Typography>
             </Box>
-            {schema.hint && (
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, pl: 1.5 }}>
-                    {schema.hint}
-                </Typography>
-            )}
-            <TextField
-                fullWidth
-                size="small"
-                multiline={shouldBeMultiline}
-                rows={shouldBeMultiline ? 3 : undefined}
-                value={localValue !== undefined ? localValue : (schema.default || '')}
-                onChange={(e) => handleChange(e.target.value)}
-                variant="outlined"
-                sx={{
-                    '& .MuiOutlinedInput-root': {
-                        borderRadius: 1.5,
-                        bgcolor: 'background.paper',
-                        fontSize: '0.875rem',
-                        '&:hover': {
-                            '& > fieldset': { borderColor: 'primary.main' }
-                        },
-                        '&.Mui-focused': {
-                            bgcolor: 'background.default',
-                            '& > fieldset': {
-                                borderWidth: 2,
-                                borderColor: 'primary.main'
-                            }
+        );
+    }
+
+    return (
+        <Box sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            py: 1.5,
+            borderBottom: depth === 0 ? 'none' : '1px solid',
+            borderColor: 'divider',
+            '&:last-child': { borderBottom: 'none' }
+        }}>
+            <DescriptionSection flex={8} />
+            <Box sx={{ flex: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                <TextField
+                    fullWidth
+                    size="small"
+                    value={localValue !== undefined ? localValue : (schema.default || '')}
+                    onChange={(e) => handleChange(e.target.value)}
+                    variant="outlined"
+                    sx={{
+                        '& .MuiOutlinedInput-root': {
+                            borderRadius: 1.5,
+                            bgcolor: 'background.paper',
+                            '&.Mui-focused > fieldset': { borderColor: 'primary.main' }
                         }
-                    }
-                }}
-            />
+                    }}
+                />
+            </Box>
         </Box>
     );
 }
@@ -396,10 +497,53 @@ function ConfigRenderer() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const api = useApi();
+    const scrollContainerRef = useRef(null);
 
     useEffect(() => {
         loadConfig();
     }, []);
+
+    // 滚动位置恢复
+    useLayoutEffect(() => {
+        if (!loading && scrollContainerRef.current) {
+            const savedPos = localStorage.getItem('astrbot_scroll_config_list');
+            if (savedPos) {
+                // 尝试恢复
+                const pos = parseInt(savedPos, 10);
+                if (pos > 0) {
+                    scrollContainerRef.current.scrollTop = pos;
+                    // 双重保障
+                    requestAnimationFrame(() => {
+                        if (scrollContainerRef.current) {
+                            scrollContainerRef.current.scrollTop = pos;
+                        }
+                    });
+                }
+            }
+        }
+    }, [loading]);
+
+    // 监听滚动保存
+    useEffect(() => {
+        const el = scrollContainerRef.current;
+        if (!el || loading) return;
+
+        const handleScroll = () => {
+            localStorage.setItem('astrbot_scroll_config_list', el.scrollTop);
+        };
+
+        let timeout;
+        const debouncedScroll = () => {
+            clearTimeout(timeout);
+            timeout = setTimeout(handleScroll, 100);
+        };
+
+        el.addEventListener('scroll', debouncedScroll);
+        return () => {
+            el.removeEventListener('scroll', debouncedScroll);
+            clearTimeout(timeout);
+        };
+    }, [loading]);
 
     // 自动保存草稿
     useEffect(() => {
@@ -540,11 +684,13 @@ function ConfigRenderer() {
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
             {/* 配置项列表 */}
-            <Box sx={{
-                flex: 1,
-                overflowY: 'auto',
-                px: 3,
-                py: 2,
+            <Box
+                ref={scrollContainerRef}
+                sx={{
+                    flex: 1,
+                    overflowY: 'auto',
+                    px: 3,
+                    py: 2,
                 '&::-webkit-scrollbar': {
                     width: '6px',
                 },
@@ -560,16 +706,9 @@ function ConfigRenderer() {
                     }
                 }
             }}>
-                <Box sx={{
-                    columnCount: { xs: 1, lg: 2 },
-                    columnGap: 2,
-                    '& > *': {
-                        breakInside: 'avoid',
-                        marginBottom: 2
-                    }
-                }}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                     {Object.entries(schema).map(([key, subSchema]) => (
-                        <Box key={key} sx={{ display: 'inline-block', width: '100%' }}>
+                        <Box key={key} sx={{ width: '100%' }}>
                             <ConfigField
                                 fieldKey={key}
                                 schema={subSchema}
@@ -587,7 +726,7 @@ function ConfigRenderer() {
             {/* 底部操作栏 */}
             <Box sx={{
                 flexShrink: 0,
-                bgcolor: 'rgba(255, 255, 255, 0.9)',
+                bgcolor: 'var(--md-sys-color-surface)', // 使用主题表面色
                 backdropFilter: 'blur(8px)',
                 borderTop: '1px solid',
                 borderColor: 'divider',
@@ -599,7 +738,7 @@ function ConfigRenderer() {
                 boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.05)',
                 zIndex: 10
             }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
                         {Object.keys(schema).length} 个配置组
                     </Typography>
