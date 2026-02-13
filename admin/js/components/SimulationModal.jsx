@@ -56,13 +56,18 @@ function SimulationModal({ open, onClose }) {
     const handleGeolocate = async () => {
         try {
             const result = await api.getGeoLocation();
-            if (result.latitude && result.longitude) {
-                setCustomParams({
-                    ...customParams,
-                    latitude: result.latitude,
-                    longitude: result.longitude,
-                    location: `${result.province || ''} ${result.city || ''}`
-                });
+            if (result.success && result.data) {
+                const { latitude, longitude, province, city } = result.data;
+                if (latitude && longitude) {
+                    setCustomParams(prev => ({
+                        ...prev,
+                        latitude: latitude,
+                        longitude: longitude,
+                        location: `${province || ''} ${city || ''}`.trim() || prev.location
+                    }));
+                }
+            } else {
+                alert('获取位置失败: ' + (result.error || '未知错误'));
             }
         } catch (e) {
             alert('获取位置失败');
@@ -187,57 +192,61 @@ function SimulationModal({ open, onClose }) {
                     </Typography>
 
                     {disasterType === 'earthquake' && (
-                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                            <Box sx={{ display: 'flex', gap: 1, gridColumn: '1 / -1' }}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            {/* 经纬度、震级、深度合并行 */}
+                            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
                                 <TextField
-                                    fullWidth
                                     label="纬度"
                                     type="number"
                                     size="small"
                                     value={customParams.latitude}
                                     onChange={(e) => setCustomParams({ ...customParams, latitude: parseFloat(e.target.value) })}
+                                    sx={{ flex: 1.2 }}
                                 />
                                 <TextField
-                                    fullWidth
                                     label="经度"
                                     type="number"
                                     size="small"
                                     value={customParams.longitude}
                                     onChange={(e) => setCustomParams({ ...customParams, longitude: parseFloat(e.target.value) })}
+                                    sx={{ flex: 1.2 }}
                                 />
-                                <IconButton onClick={handleGeolocate} title="使用当前位置">
-                                    🌍
-                                </IconButton>
+                                <Tooltip title="使用当前 IP 自动定位填充经纬度">
+                                    <IconButton onClick={handleGeolocate} color="primary" sx={{ border: '1px solid var(--md-sys-color-outline-variant)', borderRadius: '8px', padding: '8px' }}>
+                                        <span style={{ fontSize: '1.1rem' }}>📍</span>
+                                    </IconButton>
+                                </Tooltip>
+                                <TextField
+                                    label="震级 (M)"
+                                    type="number"
+                                    size="small"
+                                    value={customParams.magnitude}
+                                    onChange={(e) => setCustomParams({ ...customParams, magnitude: parseFloat(e.target.value) })}
+                                    inputProps={{ min: 0, max: 10, step: 0.1 }}
+                                    sx={{ flex: 0.8 }}
+                                />
+                                <TextField
+                                    label="深度 (km)"
+                                    type="number"
+                                    size="small"
+                                    value={customParams.depth}
+                                    onChange={(e) => setCustomParams({ ...customParams, depth: parseFloat(e.target.value) })}
+                                    inputProps={{ min: 0, step: 1 }}
+                                    sx={{ flex: 0.8 }}
+                                />
                             </Box>
 
-                            <TextField
-                                label="震级"
-                                type="number"
-                                size="small"
-                                value={customParams.magnitude}
-                                onChange={(e) => setCustomParams({ ...customParams, magnitude: parseFloat(e.target.value) })}
-                                inputProps={{ min: 0, max: 10, step: 0.1 }}
-                            />
-
-                            <TextField
-                                label="深度 (km)"
-                                type="number"
-                                size="small"
-                                value={customParams.depth}
-                                onChange={(e) => setCustomParams({ ...customParams, depth: parseFloat(e.target.value) })}
-                                inputProps={{ min: 0, step: 1 }}
-                            />
-
+                            {/* 位置描述 */}
                             <TextField
                                 fullWidth
                                 label="位置描述"
                                 size="small"
                                 value={customParams.location}
                                 onChange={(e) => setCustomParams({ ...customParams, location: e.target.value })}
-                                sx={{ gridColumn: '1 / -1' }}
                             />
 
-                            <FormControl fullWidth size="small" sx={{ gridColumn: '1 / -1' }}>
+                            {/* 数据源选择 */}
+                            <FormControl fullWidth size="small">
                                 <InputLabel>数据源</InputLabel>
                                 <Select
                                     value={customParams.source}
