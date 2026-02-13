@@ -1,8 +1,45 @@
 const { Box, Button, Typography } = MaterialUI;
 
 function StatusView({ onOpenSimulation }) {
+    const { state, refreshData } = useAppContext();
+    const { status } = state;
+    const [reconnecting, setReconnecting] = React.useState(false);
+
     const refreshAll = () => {
         window.location.reload();
+    };
+
+    const handleReconnect = async () => {
+        // 如果所有连接都正常，提示用户确认
+        if (status.activeConnections === status.totalConnections && status.totalConnections > 0) {
+            if (!confirm('当前所有连接均正常，确定要强制执行重连操作吗？\n这可能会导致短暂的连接中断。')) {
+                return;
+            }
+        }
+
+        setReconnecting(true);
+        try {
+            const response = await fetch(`${state.config.apiUrl || ''}/api/reconnect`, {
+                method: 'POST'
+            });
+            const result = await response.json();
+            
+            if (result.success) {
+                // 成功后延迟一点刷新数据，给重连一些时间
+                setTimeout(() => {
+                    refreshData();
+                    setReconnecting(false);
+                    alert(result.message || '重连操作已触发');
+                }, 1000);
+            } else {
+                alert('重连失败: ' + (result.error || '未知错误'));
+                setReconnecting(false);
+            }
+        } catch (e) {
+            console.error('Reconnect failed:', e);
+            alert('请求失败，请检查网络连接');
+            setReconnecting(false);
+        }
     };
 
     return (
@@ -36,30 +73,55 @@ function StatusView({ onOpenSimulation }) {
                         </Box>
                         
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, justifyContent: 'center' }}>
-                            <button className="btn btn-primary" onClick={onOpenSimulation} style={{ width: '100%' }}>
+                            <button
+                                className="btn btn-action"
+                                onClick={onOpenSimulation}
+                            >
+                                <span style={{ fontSize: '18px' }}>🧪</span>
                                 模拟预警仿真
                             </button>
-                            <button className="btn" onClick={refreshAll} style={{ 
-                                width: '100%', 
-                                background: 'rgba(0,0,0,0.05)',
-                                color: 'var(--md-sys-color-on-surface)'
-                            }}>
+                            
+                            <button
+                                className="btn btn-action"
+                                onClick={handleReconnect}
+                                disabled={reconnecting || !status.running}
+                                style={{
+                                    opacity: status.running ? 1 : 0.5,
+                                    cursor: status.running ? 'pointer' : 'not-allowed'
+                                }}
+                                title="强制重连所有已启用但离线的数据源"
+                            >
+                                {reconnecting ? (
+                                    <>
+                                        <span className="spinner" style={{
+                                            width: '14px',
+                                            height: '14px',
+                                            border: '2px solid rgba(0,0,0,0.2)',
+                                            borderTopColor: 'var(--md-sys-color-primary)',
+                                            borderRadius: '50%'
+                                        }}></span>
+                                        处理中...
+                                    </>
+                                ) : (
+                                    <>
+                                        <span style={{ fontSize: '18px' }}>🔌</span>
+                                        手动重连数据源
+                                    </>
+                                )}
+                            </button>
+
+                            <button
+                                className="btn btn-action"
+                                onClick={refreshAll}
+                            >
+                                <span style={{ fontSize: '18px' }}>🔄</span>
                                 刷新控制台数据
                             </button>
                         </Box>
                     </div>
                 </div>
 
-                {/* 重大事件时间轴 */}
                 <div className="span-12">
-                    <HorizontalTimeline />
-                </div>
-
-                <div className="span-12" style={{ marginTop: '12px' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, ml: 1 }}>
-                        <Typography variant="h6" sx={{ fontWeight: 700, opacity: 0.8 }}>活跃连接</Typography>
-                        <div style={{ flex: 1, height: '1px', background: 'var(--md-sys-color-outline-variant)', marginLeft: '12px' }}></div>
-                    </Box>
                     <ConnectionsGrid />
                 </div>
             </div>
