@@ -850,6 +850,69 @@ class DisasterWarningService:
                 f"[灾害预警] 事件详情: ID={event.id}, 类型={event.disaster_type.value}, 数据源={event.source.value}"
             )
 
+    async def reconnect_all_sources(self) -> dict[str, str]:
+        """
+        强制重连所有已启用但离线的数据源
+        返回: dict {connection_name: status_message}
+        """
+        results = {}
+        if not self.ws_manager:
+            return {"error": "WebSocket管理器未初始化"}
+
+        reconnect_count = 0
+
+        # 遍历 Service 层配置的所有连接
+        for conn_name, conn_config in self.connections.items():
+            # 检查连接状态
+            is_connected = False
+            if conn_name in self.ws_manager.connections:
+                ws = self.ws_manager.connections[conn_name]
+                if not ws.closed:
+                    is_connected = True
+
+            if is_connected:
+                results[conn_name] = "已连接 (跳过)"
+                continue
+
+            # 执行强制重连
+            try:
+                # 确保 connection_info 存在于 ws_manager 中
+                # 如果因为某种原因丢失，尝试修复（通常 start() 后都会有）
+                if conn_name not in self.ws_manager.connection_info:
+                    connection_info = {
+                        "connection_name": conn_name,
+                        "handler_type": conn_config["handler"],
+                        "data_source": self._get_data_source_from_connection(conn_name),
+                        "established_time": None,
+                        "backup_url": conn_config.get("backup_url"),
+                    }
+                    self.ws_manager.connection_info[conn_name] = {
+                        "uri": conn_config["url"],
+                        "headers": None,
+                        "connection_type": "websocket",
+                        "established_time": None,
+                        "retry_count": 0,
+                        **connection_info,
+                    }
+
+                # 调用 WebSocket Manager 的强制重连
+                if hasattr(self.ws_manager, "force_reconnect"):
+                    triggered = await self.ws_manager.force_reconnect(conn_name)
+                    if triggered:
+                        results[conn_name] = "✅ 已触发重连"
+                        reconnect_count += 1
+                    else:
+                        results[conn_name] = "⚠️ 重连未触发"
+                else:
+                    results[conn_name] = "❌ Manager不支持重连"
+
+            except Exception as e:
+                results[conn_name] = f"❌ 失败: {e}"
+                logger.error(f"[灾害预警] 手动重连 {conn_name} 失败: {e}")
+
+        logger.info(f"[灾害预警] 手动重连操作完成，触发了 {reconnect_count} 个重连任务")
+        return results
+
     def get_service_status(self) -> dict[str, Any]:
         """获取服务状态 - 增强版本"""
         # 获取WebSocket连接状态
