@@ -56,6 +56,17 @@ body.dark-theme {
     padding: 0;
 }
 
+/* 统一过渡效果，确保主题切换时各区域动画一致 */
+/* 注意：配置管理页面元素过多时，通配符选择器会导致严重的性能问题 */
+body, .app, .sidebar, .main-content, .card, .btn, .nav-item, .config-card, .config-header,
+.top-bar, .modal-container, input, select, textarea, button, .MuiPaper-root, .MuiAccordion-root,
+.MuiAccordionSummary-root, .MuiAccordionDetails-root {
+    transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 /* 移动端触摸优化 */
 html {
     -webkit-tap-highlight-color: transparent;
@@ -65,15 +76,15 @@ html {
 
 body {
     background-color: var(--md-sys-color-background);
-    background-image: 
+    background-image:
         radial-gradient(at 0% 0%, rgba(103, 80, 164, 0.08) 0, transparent 40%),
         radial-gradient(at 50% 0%, rgba(236, 72, 153, 0.05) 0, transparent 40%),
         radial-gradient(at 100% 0%, rgba(103, 80, 164, 0.08) 0, transparent 40%);
     background-attachment: fixed;
     color: var(--md-sys-color-on-surface);
-    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: 'Outfit', "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Heiti SC", "WenQuanYi Micro Hei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     min-height: 100vh;
-    transition: background 0.3s, color 0.3s;
+    /* 移除 body 上的 transition，使用全局通配符控制 */
     overflow-x: hidden;
 }
 
@@ -204,7 +215,8 @@ body {
 }
 
 body.dark-theme .config-header {
-    background: rgba(20, 18, 24, 0.5);
+    background: rgba(20, 18, 24, 0.8); /* 增加不透明度，减弱透底亮度 */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .card:hover {
@@ -229,24 +241,6 @@ body.dark-theme .config-header {
 .badge-error { background: #fee2e2; color: #991b1b; }
 
 /* 现有组件适配... */
-.events-list { display: flex; flex-direction: column; gap: 12px; }
-
-.event-card {
-    background: var(--md-sys-color-surface);
-    padding: 16px;
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    border: 1px solid var(--glass-border);
-    transition: all 0.2s;
-}
-
-.event-card:hover {
-    background: var(--md-sys-color-surface-variant);
-    border-color: var(--md-sys-color-primary);
-}
-
 .mag-badge {
     width: 48px;
     height: 48px;
@@ -277,6 +271,58 @@ body.dark-theme .config-header {
 .btn-primary:hover {
     transform: translateY(-1px);
     box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+}
+
+/* 通用操作按钮样式 */
+.btn-action {
+    width: 100%;
+    background: var(--md-sys-color-surface-variant);
+    color: var(--md-sys-color-on-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center; /* 确保水平居中 */
+    gap: 12px; /* 增加图标和文字间距 */
+    font-weight: 600;
+    border: 1px solid transparent;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    padding: 12px 16px; /* 增加内边距 */
+    line-height: 1.5; /* 优化行高 */
+    cursor: pointer; /* 确保鼠标手势 */
+}
+
+/* 移除 .btn-action span 的默认样式干扰（如果有） */
+.btn-action span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-action:hover {
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    border-color: var(--md-sys-color-outline-variant);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.btn-action:active {
+    transform: translateY(0);
+    box-shadow: none;
+    opacity: 0.8; /* 增加按下时的视觉反馈 */
+}
+
+/* 暗色模式下的按钮覆盖样式 */
+body.dark-theme .btn-action {
+    background: rgba(255, 255, 255, 0.08); /* 稍微调亮背景 */
+    color: var(--md-sys-color-on-surface);
+    border: 1px solid rgba(255, 255, 255, 0.05); /* 微弱的边框增加层次感 */
+}
+
+body.dark-theme .btn-action:hover {
+    background: rgba(208, 188, 255, 0.15); /* 悬停时使用更明显的主题色 */
+    color: var(--md-sys-color-primary); /* 文字变亮紫色 */
+    border-color: rgba(208, 188, 255, 0.3);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4); /* 暗色模式下更深的阴影 */
 }
 
 /* 模态框样式 */
@@ -488,10 +534,10 @@ body.dark-theme .badge-weather { background: #E65100; color: #FFE0B2; }
 }
 
 .mag-row {
-    display: grid;
-    grid-template-columns: 110px 1fr 60px;
+    display: flex; /* 改用 Flex 布局，避免 Grid 的列宽限制导致溢出 */
     align-items: center;
     gap: 16px;
+    width: 100%;
 }
 
 .mag-label {
@@ -499,6 +545,17 @@ body.dark-theme .badge-weather { background: #E65100; color: #FFE0B2; }
     font-weight: 700;
     color: var(--md-sys-color-on-surface-variant);
     text-align: right;
+    width: 90px; /* 稍微减小宽度 */
+    flex-shrink: 0; /* 防止压缩 */
+}
+
+.mag-bar-container {
+    height: 32px;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    flex: 1; /* 占据剩余空间 */
+    min-width: 0; /* 允许 Flex 子项缩小 */
 }
 
 .mag-bar-container {
