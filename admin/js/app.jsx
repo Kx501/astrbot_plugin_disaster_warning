@@ -1,5 +1,5 @@
 const { ThemeProvider, createTheme, CssBaseline, Box, Container } = MaterialUI;
-const { useState, useMemo, useEffect } = React;
+const { useState, useMemo, useEffect, useRef, useLayoutEffect } = React;
 
 /**
  * 应用程序根组件
@@ -18,7 +18,141 @@ function App() {
         localStorage.setItem('currentView', currentView);
     }, [currentView]);
 
+    // 滚动位置记忆处理
+    const mainContentRef = useRef(null);
+    const isRestoringRef = useRef(false);
+
+    // 1. 切换视图时恢复滚动位置
+    useLayoutEffect(() => {
+        const el = mainContentRef.current;
+        if (!el) return;
+
+        const key = `astrbot_scroll_${currentView}`;
+        const savedPos = parseInt(localStorage.getItem(key) || '0', 10);
+        
+        // 标记正在恢复中，避免保存逻辑覆盖
+        isRestoringRef.current = true;
+
+        if (savedPos > 0) {
+            el.scrollTop = savedPos;
+            
+            // 针对异步内容加载的重试机制
+            const retryScroll = () => {
+                // 1. 如果用户已手动介入（通过事件监听捕获），停止恢复
+                if (!isRestoringRef.current) return;
+
+                const currentScroll = el.scrollTop;
+                
+                // 2. 智能检测：如果当前滚动位置既不是0，也与目标位置偏差较大（>100px）
+                // 很有可能是用户通过拖动滚动条改变了位置（这种操作难以通过事件完全捕获）
+                // 此时应放弃后续的强制修正，尊重用户当前的浏览位置
+                if (currentScroll > 0 && Math.abs(currentScroll - savedPos) > 100) {
+                    isRestoringRef.current = false;
+                    return;
+                }
+
+                if (Math.abs(currentScroll - savedPos) > 5 && el.scrollHeight > el.clientHeight) {
+                    el.scrollTop = savedPos;
+                }
+            };
+
+            // 多次尝试以适应不同的加载速度
+            // 增加尝试次数和持续时间，以应对网络延迟导致的列表渲染滞后
+            const timeouts = [
+                setTimeout(retryScroll, 50),
+                setTimeout(retryScroll, 200),
+                setTimeout(retryScroll, 500),
+                setTimeout(retryScroll, 1000),
+                setTimeout(retryScroll, 2000)
+            ];
+
+            // 2.5秒后结束恢复状态
+            const tEnd = setTimeout(() => {
+                isRestoringRef.current = false;
+            }, 2500);
+
+            return () => {
+                timeouts.forEach(clearTimeout);
+                clearTimeout(tEnd);
+            };
+        } else {
+            el.scrollTop = 0;
+            isRestoringRef.current = false;
+        }
+    }, [currentView]);
+
+    // 补充：数据变化时尝试再次修正滚动位置（应对列表动态加载）
+    useEffect(() => {
+        if (isRestoringRef.current && mainContentRef.current) {
+            const key = `astrbot_scroll_${currentView}`;
+            const savedPos = parseInt(localStorage.getItem(key) || '0', 10);
+            const el = mainContentRef.current;
+            
+            // 再次检查锁状态，防止在 Effect 执行前用户已经打断
+            if (isRestoringRef.current && savedPos > 0 && Math.abs(el.scrollTop - savedPos) > 20 && el.scrollHeight >= savedPos) {
+                // 同样增加智能检测：如果偏差过大，认为是用户操作
+                if (el.scrollTop > 0 && Math.abs(el.scrollTop - savedPos) > 100) {
+                    isRestoringRef.current = false;
+                    return;
+                }
+                el.scrollTop = savedPos;
+            }
+        }
+    }, [state.events, state.stats]);
+
+    // 2. 监听滚动并保存
+    useEffect(() => {
+        const el = mainContentRef.current;
+        if (!el) return;
+
+        const handleScroll = () => {
+            // 如果处于恢复状态
+            if (isRestoringRef.current) {
+                const key = `astrbot_scroll_${currentView}`;
+                const savedPos = parseInt(localStorage.getItem(key) || '0', 10);
+                
+                // 额外检查：如果滚动位置发生了巨大变化（>100px），这通常意味着用户拖动了滚动条
+                // 此时即使没有触发 mousedown/touchstart 等事件，也应该解除锁定
+                if (Math.abs(el.scrollTop - savedPos) > 100) {
+                    isRestoringRef.current = false;
+                } else {
+                    // 否则认为是自动恢复过程中的滚动，不保存
+                    return;
+                }
+            }
+
+            const key = `astrbot_scroll_${currentView}`;
+            localStorage.setItem(key, el.scrollTop);
+        };
+
+        // 防抖处理
+        let timeout;
+        const debouncedScroll = () => {
+            clearTimeout(timeout);
+            timeout = setTimeout(handleScroll, 100);
+        };
+
+        el.addEventListener('scroll', debouncedScroll);
+        // 监听用户交互以立即终止恢复状态
+        const stopRestoring = () => { isRestoringRef.current = false; };
+        el.addEventListener('touchstart', stopRestoring, { passive: true });
+        el.addEventListener('wheel', stopRestoring, { passive: true });
+        el.addEventListener('mousedown', stopRestoring); // 捕获滚动条拖动
+        el.addEventListener('keydown', stopRestoring); // 捕获键盘滚动
+
+        return () => {
+            el.removeEventListener('scroll', debouncedScroll);
+            el.removeEventListener('touchstart', stopRestoring);
+            el.removeEventListener('wheel', stopRestoring);
+            el.removeEventListener('mousedown', stopRestoring);
+            el.removeEventListener('keydown', stopRestoring);
+            clearTimeout(timeout);
+        };
+    }, [currentView]);
+
     // 使用WebSocket Hook
+    // 注意：useWebSocket 应该在 AppProvider 内部使用，但这里 App 组件已经在 AppProvider 内部
+    // 所以调用是安全的。保持全局单例连接。
     useWebSocket();
 
     // Material Design 3 主题配置 - 紫色种子色（正确的层次）
@@ -286,7 +420,7 @@ function App() {
                 <div className="main-wrapper">
                     <Header currentView={currentView} />
 
-                    <div className="main-content">
+                    <div className="main-content" ref={mainContentRef}>
                         {renderView()}
                     </div>
                 </div>
