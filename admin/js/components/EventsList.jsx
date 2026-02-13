@@ -8,13 +8,17 @@ const { useState, useMemo } = React;
  */
 function EventsList() {
     const { state } = useAppContext();
-    const { events } = state;
+    const { events, config } = state;
+    const displayTimezone = config.displayTimezone || 'UTC+8';
     const [filterType, setFilterType] = useState('all');
     const [expandedEvents, setExpandedEvents] = useState(new Set());
 
     const filteredEvents = useMemo(() => {
-        if (filterType === 'all') return events;
-        return events.filter(evt => {
+        // 先确保 events 是数组，如果不是则返回空数组，避免崩溃
+        const safeEvents = Array.isArray(events) ? events : [];
+        if (filterType === 'all') return safeEvents;
+        
+        return safeEvents.filter(evt => {
             const type = evt.type || '';
             if (filterType === 'earthquake_warning') {
                 return type === 'earthquake_warning';
@@ -102,6 +106,7 @@ function EventsList() {
 
         let badgeContent = '❓';
         let badgeClass = 'badge-unknown';
+        let weatherIconUrl = null;
 
         if (isEarthquake) {
             badgeContent = (evt.magnitude || 0).toFixed(1);
@@ -112,6 +117,12 @@ function EventsList() {
         } else if (isWeather) {
             badgeContent = '☁️';
             badgeClass = 'badge-weather';
+            // 尝试构建气象预警图标 URL
+            // 优先从 weather_type_code (后端统计字段) 获取，其次尝试 raw_data
+            const pCode = evt.weather_type_code || evt.raw_data?.type || evt.data?.type;
+            if (pCode) {
+                weatherIconUrl = `https://image.nmc.cn/assets/img/alarm/${pCode}.png`;
+            }
         }
 
         return (
@@ -122,21 +133,44 @@ function EventsList() {
                 <div className={`mag-badge ${badgeClass}`} style={{
                     width: isHistory ? '40px' : '56px',
                     height: isHistory ? '40px' : '56px',
-                    fontSize: isHistory ? '14px' : '18px'
+                    fontSize: isHistory ? '14px' : '18px',
+                    overflow: 'visible', // 允许溢出，防止图标被切
+                    padding: weatherIconUrl ? 0 : undefined,
+                    borderRadius: weatherIconUrl ? '0' : '50%', // 气象图标完全去圆角
+                    backgroundColor: weatherIconUrl ? 'transparent' : undefined,
+                    boxShadow: weatherIconUrl ? 'none' : undefined
                 }}>
-                    {badgeContent}
+                    {weatherIconUrl ? (
+                        <img
+                            src={weatherIconUrl}
+                            alt={badgeContent}
+                            style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'contain',
+                                transform: 'scale(1.5)' // 放大显示，因为原图标可能有留白
+                            }}
+                            onError={(e) => {
+                                e.target.style.display = 'none';
+                                // 图片加载失败时恢复背景色和阴影 (通过修改父元素样式较为复杂，这里简单处理)
+                                e.target.parentElement.style.backgroundColor = 'var(--md-sys-color-surface-variant)';
+                            }}
+                        />
+                    ) : (
+                        badgeContent
+                    )}
                 </div>
 
                 <div className="event-main">
                     <Typography variant={isHistory ? "body2" : "h6"} sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5 }}>
                         {evt.description || '未知位置'}
                     </Typography>
-                    <div className="event-meta" style={{ opacity: 0.6 }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            🕒 {formatTimeFriendly(evt.time)}
+                    <div className="event-meta" style={{ opacity: 0.6, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            🕒 {formatTimeFriendly(evt.time, displayTimezone)}
                         </span>
-                        <span style={{ margin: '0 8px' }}>•</span>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ opacity: 0.5 }}>•</span>
                             📡 {formatSourceName(evt.source)}
                         </span>
                     </div>
