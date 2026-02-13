@@ -40,10 +40,14 @@ function TrendChart({ style }) {
         if (!data || data.length === 0) return null;
 
         const width = 1000;
-        const height = 180;
-        const padding = { top: 15, right: 5, bottom: 5, left: 5 };
+        const height = 220; // 稍微增加高度以容纳X轴标签
+        // 增加边距，为坐标轴留出空间
+        const padding = { top: 20, right: 30, bottom: 30, left: 40 };
         
-        const maxCount = Math.max(...data.map(d => d.count), 5);
+        // 计算最大值，保证至少为 5，且略微留白
+        const dataMax = Math.max(...data.map(d => d.count));
+        const maxCount = Math.max(dataMax * 1.2, 5); // 留出 20% 顶部空间
+        
         const xScale = (width - padding.left - padding.right) / (data.length - 1);
         const yScale = (height - padding.top - padding.bottom) / maxCount;
 
@@ -61,11 +65,40 @@ function TrendChart({ style }) {
             const cp1x = p0.x + (p1.x - p0.x) / 2;
             pathData += ` C ${cp1x} ${p0.y}, ${cp1x} ${p1.y}, ${p1.x} ${p1.y}`;
         }
+        
+        // 生成面积图闭合路径，注意底部边界需要减去 padding.bottom
+        const bottomY = height - padding.bottom;
+        const areaPathData = `${pathData} L ${points[points.length - 1].x} ${bottomY} L ${padding.left} ${bottomY} Z`;
 
-        // 生成面积图闭合路径
-        const areaPathData = `${pathData} L ${points[points.length - 1].x} ${height} L 0 ${height} Z`;
+        // 生成Y轴刻度 (5个刻度)
+        const yTicks = [];
+        for (let i = 0; i <= 4; i++) {
+            const val = (maxCount / 4) * i;
+            // 只有整数刻度或者数值较大时才有意义
+            if (val % 1 === 0 || val > 5) {
+                yTicks.push({
+                    value: Math.round(val),
+                    y: height - padding.bottom - (val * yScale)
+                });
+            }
+        }
 
-        return { width, height, pathData, areaPathData, points, maxCount, xScale, padding };
+        // 生成X轴刻度 (每隔几个点显示一个时间)
+        const xTicks = [];
+        // 根据数据量动态决定步长，保证显示约6-8个标签
+        const tickStep = Math.max(Math.floor(data.length / 7), 1);
+        
+        for (let i = 0; i < data.length; i += tickStep) {
+            // 简单处理时间显示，只取 HH:mm
+            const timeStr = data[i].time.split(' ')[1] || data[i].time;
+            xTicks.push({
+                label: timeStr,
+                x: padding.left + i * xScale,
+                y: height - padding.bottom + 15
+            });
+        }
+
+        return { width, height, pathData, areaPathData, points, maxCount, xScale, yScale, padding, yTicks, xTicks };
     }, [data]);
 
     const handleMouseMove = (e) => {
@@ -88,31 +121,45 @@ function TrendChart({ style }) {
 
     return (
         <div className="card" style={{ ...style, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <div className="chart-card-header" style={{ marginBottom: '8px' }}>
+            <div className="chart-card-header" style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontSize: '20px' }}>📈</span>
                     <Typography variant="h6">预警趋势</Typography>
                 </div>
-                {hoveredIndex !== null && data[hoveredIndex] && (
-                    <div style={{ 
-                        marginLeft: 'auto', 
-                        marginRight: '12px',
-                        background: 'var(--md-sys-color-primary-container)',
-                        color: 'var(--md-sys-color-on-primary-container)',
-                        padding: '2px 10px',
-                        borderRadius: '20px',
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        animation: 'fadeIn 0.2s'
-                    }}>
-                        <span>{data[hoveredIndex].time}</span>
-                        <span style={{ opacity: 0.5 }}>|</span>
-                        <span>{data[hoveredIndex].count} 次</span>
-                    </div>
-                )}
+                
+                {/* 
+                   中间固定区域显示悬浮信息 
+                   使用 visibility 控制显示隐藏，而不是条件渲染，防止布局跳动
+                */}
+                <div style={{ 
+                    flex: 1, 
+                    display: 'flex', 
+                    justifyContent: 'center', 
+                    visibility: hoveredIndex !== null && data[hoveredIndex] ? 'visible' : 'hidden',
+                    opacity: hoveredIndex !== null && data[hoveredIndex] ? 1 : 0,
+                    transition: 'opacity 0.2s',
+                    height: '24px' // 固定高度占位
+                }}>
+                    {hoveredIndex !== null && data[hoveredIndex] && (
+                        <div style={{ 
+                            background: 'var(--md-sys-color-primary-container)',
+                            color: 'var(--md-sys-color-on-primary-container)',
+                            padding: '2px 12px',
+                            borderRadius: '20px',
+                            fontSize: '13px',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                        }}>
+                            <span>{data[hoveredIndex].time}</span>
+                            <span style={{ opacity: 0.5 }}>|</span>
+                            <span>{data[hoveredIndex].count} 次</span>
+                        </div>
+                    )}
+                </div>
+
                 <ToggleButtonGroup
                     value={range}
                     exclusive
@@ -145,6 +192,69 @@ function TrendChart({ style }) {
                             </linearGradient>
                         </defs>
                         
+                        {/* 坐标轴单位 - Y轴 */}
+                        <text
+                            x={chartParams.padding.left}
+                            y={chartParams.padding.top - 8}
+                            textAnchor="middle"
+                            fill="var(--md-sys-color-on-surface-variant)"
+                            style={{ fontSize: '10px', opacity: 0.5, fontWeight: 600 }}
+                        >
+                            预警数量
+                        </text>
+
+                        {/* 坐标轴辅助线 - Y轴 */}
+                        {chartParams.yTicks.map((tick, i) => (
+                            <g key={`y-${i}`}>
+                                <line
+                                    x1={chartParams.padding.left}
+                                    y1={tick.y}
+                                    x2={chartParams.width - chartParams.padding.right}
+                                    y2={tick.y}
+                                    stroke="var(--md-sys-color-outline-variant)"
+                                    strokeWidth="1"
+                                    strokeDasharray="3 3"
+                                    style={{ opacity: 0.2 }}
+                                />
+                                <text
+                                    x={chartParams.padding.left - 5}
+                                    y={tick.y}
+                                    dy="0.32em"
+                                    textAnchor="end"
+                                    fill="var(--md-sys-color-on-surface-variant)"
+                                    style={{ fontSize: '10px', opacity: 0.7 }}
+                                >
+                                    {tick.value}
+                                </text>
+                            </g>
+                        ))}
+                        
+                        {/* 坐标轴辅助线 - X轴 */}
+                        {chartParams.xTicks.map((tick, i) => (
+                            <g key={`x-${i}`}>
+                                <text
+                                    x={tick.x}
+                                    y={tick.y}
+                                    textAnchor="middle"
+                                    fill="var(--md-sys-color-on-surface-variant)"
+                                    style={{ fontSize: '10px', opacity: 0.7 }}
+                                >
+                                    {tick.label}
+                                </text>
+                            </g>
+                        ))}
+
+                        {/* 坐标轴单位 - X轴 */}
+                        <text
+                            x={chartParams.width - 15}
+                            y={chartParams.height - chartParams.padding.bottom + 5}
+                            textAnchor="end"
+                            fill="var(--md-sys-color-on-surface-variant)"
+                            style={{ fontSize: '10px', opacity: 0.5, fontWeight: 600 }}
+                        >
+                            时间
+                        </text>
+
                         {/* 面积填充 */}
                         <path
                             d={chartParams.areaPathData}
@@ -169,9 +279,9 @@ function TrendChart({ style }) {
                                 {/* 垂直线 */}
                                 <line
                                     x1={chartParams.points[hoveredIndex].x}
-                                    y1="0"
+                                    y1={chartParams.padding.top}
                                     x2={chartParams.points[hoveredIndex].x}
-                                    y2={chartParams.height}
+                                    y2={chartParams.height - chartParams.padding.bottom}
                                     stroke="var(--md-sys-color-primary)"
                                     strokeWidth="1"
                                     strokeDasharray="4 4"
@@ -195,14 +305,22 @@ function TrendChart({ style }) {
                             </g>
                         )}
                         
-                        {/* 辅助参考线 */}
+                        {/* 坐标轴底线 */}
                         <line 
-                            x1="0" y1={chartParams.height - 5} 
-                            x2={chartParams.width} y2={chartParams.height - 5} 
-                            stroke="var(--md-sys-color-outline-variant)" 
+                            x1={chartParams.padding.left} y1={chartParams.height - chartParams.padding.bottom} 
+                            x2={chartParams.width - chartParams.padding.right} y2={chartParams.height - chartParams.padding.bottom} 
+                            stroke="var(--md-sys-color-outline)" 
                             strokeWidth="1" 
-                            strokeDasharray="4 4"
-                            style={{ opacity: 0.3, pointerEvents: 'none' }}
+                            style={{ opacity: 0.5 }}
+                        />
+                        
+                         {/* 坐标轴左线 */}
+                         <line 
+                            x1={chartParams.padding.left} y1={chartParams.padding.top} 
+                            x2={chartParams.padding.left} y2={chartParams.height - chartParams.padding.bottom} 
+                            stroke="var(--md-sys-color-outline)" 
+                            strokeWidth="1" 
+                            style={{ opacity: 0.5 }}
                         />
                     </svg>
                 ) : (
@@ -211,13 +329,6 @@ function TrendChart({ style }) {
                     </Box>
                 )}
             </div>
-            
-            {!loading && data.length > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', opacity: 0.5 }}>
-                    <Typography variant="caption">{data[0].time.split(' ')[1] || data[0].time}</Typography>
-                    <Typography variant="caption">{data[data.length - 1].time.split(' ')[1] || data[data.length - 1].time}</Typography>
-                </div>
-            )}
         </div>
     );
 }
