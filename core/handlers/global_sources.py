@@ -148,7 +148,7 @@ class GlobalQuakeHandler(BaseDataHandler):
 
             logger.info(
                 f"[灾害预警] Global Quake地震解析成功 (Protobuf): {earthquake.place_name} "
-                f"(M {earthquake.magnitude:.1f}), 烈度: {eq_data.intensity}, "
+                f"(M {earthquake.magnitude or 0.0:.1f}), 烈度: {eq_data.intensity}, "
                 f"时间: {earthquake.shock_time}"
             )
 
@@ -232,7 +232,7 @@ class GlobalQuakeHandler(BaseDataHandler):
 
             logger.info(
                 f"[灾害预警] Global Quake地震解析成功: {earthquake.place_name} "
-                f"(M {earthquake.magnitude:.1f}), 烈度: {intensity_str}, "
+                f"(M {earthquake.magnitude or 0.0:.1f}), 烈度: {intensity_str}, "
                 f"时间: {earthquake.shock_time}"
             )
 
@@ -372,7 +372,7 @@ class USGSEarthquakeHandler(BaseDataHandler):
             )
 
             logger.info(
-                f"[灾害预警] 地震数据解析成功: {earthquake.place_name} (M {earthquake.magnitude}), 时间: {earthquake.shock_time}"
+                f"[灾害预警] 地震数据解析成功: {earthquake.place_name} (M {earthquake.magnitude or 0.0}), 时间: {earthquake.shock_time}"
             )
 
             return DisasterEvent(
