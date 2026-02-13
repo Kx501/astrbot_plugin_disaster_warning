@@ -45,6 +45,26 @@ function StatusCard() {
                         {status.activeConnections} <span style={{ opacity: 0.4 }}>/</span> {status.totalConnections}
                     </Typography>
                 </div>
+
+                {/* 启用的子数据源统计 */}
+                {status.subSourceStatus && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="body2" sx={{ opacity: 0.7, fontWeight: 500 }}>启用的子数据源</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                            {(() => {
+                                let enabledCount = 0;
+                                let totalCount = 0;
+                                Object.values(status.subSourceStatus).forEach(group => {
+                                    Object.values(group).forEach(enabled => {
+                                        totalCount++;
+                                        if (enabled) enabledCount++;
+                                    });
+                                });
+                                return `${enabledCount} / ${totalCount}`;
+                            })()}
+                        </Typography>
+                    </div>
+                )}
             </Box>
         </div>
     );
