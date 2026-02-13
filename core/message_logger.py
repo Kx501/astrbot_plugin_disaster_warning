@@ -6,6 +6,7 @@
 import asyncio
 import hashlib
 import json
+import re
 import threading
 import time
 import traceback
@@ -1326,19 +1327,60 @@ class MessageLogger:
             entry_count = 0
             sources = set()
             date_range = {"start": None, "end": None}
-            file_size_mb = self.log_file_path.stat().st_size / (1024 * 1024)
+            current_size_mb = self.log_file_path.stat().st_size / (1024 * 1024)
+            file_size_mb = current_size_mb
+
+            # 统计文件数量 (包含当前文件)
+            file_count = 1
+
+            # 定义辅助函数用于解析时间范围
+            def update_date_range(content_to_parse):
+                # 简单提取前1000字符和后1000字符来寻找最早和最晚时间，避免解析整个大文件
+                # 注意：这假设日志是按时间顺序追加的
+                try:
+                    # 查找所有时间戳
+                    # 匹配 "🕐 日志写入时间: YYYY-MM-DD HH:MM:SS"
+                    timestamps = re.findall(
+                        r"🕐 日志写入时间: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})",
+                        content_to_parse,
+                    )
+
+                    if timestamps:
+                        first_ts = timestamps[0]
+                        last_ts = timestamps[-1]
+
+                        dt_first = datetime.strptime(first_ts, "%Y-%m-%d %H:%M:%S")
+                        dt_last = datetime.strptime(last_ts, "%Y-%m-%d %H:%M:%S")
+
+                        if date_range["start"] is None or dt_first < datetime.strptime(
+                            date_range["start"], "%Y-%m-%d %H:%M:%S"
+                        ):
+                            date_range["start"] = first_ts
+
+                        if date_range["end"] is None or dt_last > datetime.strptime(
+                            date_range["end"], "%Y-%m-%d %H:%M:%S"
+                        ):
+                            date_range["end"] = last_ts
+
+                except Exception as e:
+                    logger.debug(f"[灾害预警] 解析日志时间范围失败: {e}")
 
             # 检查是否有轮转的旧日志文件并计算总大小和条目数
+            # 注意：日志轮转通常是从 1 到 N，其中 1 是最新的备份，N 是最旧的
+            # 我们需要遍历所有备份文件来获取完整的时间范围
             for i in range(1, self.max_files + 1):
                 old_file = self.log_file_path.with_suffix(f".log.{i}")
                 if old_file.exists():
+                    file_count += 1
                     file_size_mb += old_file.stat().st_size / (1024 * 1024)
                     # 统计旧日志文件中的条目
                     try:
                         with open(old_file, encoding="utf-8") as f:
                             old_content = f.read()
-                            # 直接统计时间戳标记出现的次数，避免 split 分割符带来的重复计算问题
+                            # 直接统计时间戳标记出现的次数
                             entry_count += old_content.count("🕐 日志写入时间:")
+                            # 更新时间范围
+                            update_date_range(old_content)
                     except Exception as e:
                         logger.debug(f"[灾害预警] 读取旧日志文件 {old_file} 失败: {e}")
 
@@ -1351,8 +1393,10 @@ class MessageLogger:
 
             # 按分隔符分割条目 (仅用于提取最近的日志详情，不用于计数)
             entries = content.split(f"\n{'=' * 35}\n")
-            
-            # 重新遍历 entries 仅为了提取 date_range 和 sources，不进行计数
+
+            # 重新遍历 entries 提取 sources，并更新时间范围
+            update_date_range(content)
+
             for entry in entries:
                 entry = entry.strip()
                 if not entry or not entry.startswith("🕐 日志写入时间:"):
@@ -1363,30 +1407,19 @@ class MessageLogger:
                     lines = entry.split("\n")
                     for line in lines:
                         line = line.strip()
-                        if line.startswith("🕐 日志写入时间:"):
-                            timestamp_str = line.replace("🕐 日志写入时间:", "").strip()
-                            try:
-                                dt = datetime.strptime(
-                                    timestamp_str, "%Y-%m-%d %H:%M:%S"
-                                )
-                                if date_range[
-                                    "start"
-                                ] is None or dt < datetime.strptime(
-                                    date_range["start"], "%Y-%m-%d %H:%M:%S"
-                                ):
-                                    date_range["start"] = timestamp_str
-                                if date_range["end"] is None or dt > datetime.strptime(
-                                    date_range["end"], "%Y-%m-%d %H:%M:%S"
-                                ):
-                                    date_range["end"] = timestamp_str
-                            except ValueError:
-                                pass
-                        elif line.startswith("📡 来源:"):
+                        if line.startswith("📡 来源:"):
                             source = line.replace("📡 来源:", "").strip()
                             sources.add(source)
                 except Exception as e:
                     logger.debug(f"[灾害预警] 解析日志条目失败: {e}")
                     continue
+
+            # 计算容量统计
+            # max_files 是备份文件数，加上当前文件就是总允许文件数
+            max_capacity_mb = self.max_size_mb * (self.max_files + 1)
+            usage_percent = (
+                (file_size_mb / max_capacity_mb) * 100 if max_capacity_mb > 0 else 0
+            )
 
             return {
                 "enabled": self.enabled,
@@ -1396,6 +1429,11 @@ class MessageLogger:
                 "data_sources": list(sources),
                 "date_range": date_range,
                 "file_size_mb": file_size_mb,
+                "file_count": file_count,
+                "max_files_limit": self.max_files,
+                "max_single_file_size_mb": self.max_size_mb,
+                "max_total_capacity_mb": max_capacity_mb,
+                "usage_percent": usage_percent,
                 "filter_stats": self.filter_stats.copy(),
                 "format_version": "3.0",  # 新格式版本
             }
