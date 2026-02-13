@@ -1,9 +1,10 @@
 /**
  * 格式化时间为友好显示字符串（如"刚刚"、"xx分钟前"）
  * @param {string} isoString - ISO 8601 格式的时间字符串
+ * @param {string} timeZone - 目标时区 (例如: 'UTC+8', 'Asia/Shanghai')
  * @returns {string} 格式化后的时间字符串
  */
-function formatTimeFriendly(isoString) {
+function formatTimeFriendly(isoString, timeZone = 'UTC+8') {
     if (!isoString) return '--';
     const date = new Date(isoString);
     const now = new Date();
@@ -13,11 +14,80 @@ function formatTimeFriendly(isoString) {
     if (diffMins < 1) return '刚刚';
     if (diffMins < 60) return `${diffMins}分钟前`;
 
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    const hours = date.getHours().toString().padStart(2, '0');
-    const mins = date.getMinutes().toString().padStart(2, '0');
-    return `${month}-${day} ${hours}:${mins}`;
+    return formatTimeWithZone(isoString, timeZone, false);
+}
+
+/**
+ * 将时间字符串格式化为指定时区的时间
+ * @param {string} isoString - ISO 8601 时间字符串
+ * @param {string} timeZone - 目标时区 (例如: 'UTC+8', 'Asia/Shanghai')
+ * @param {boolean} includeYear - 是否包含年份
+ * @returns {string} 格式化后的时间字符串 (e.g., "02-13 14:30")
+ */
+function formatTimeWithZone(isoString, timeZone = 'UTC+8', includeYear = false) {
+    if (!isoString) return '--';
+    try {
+        const date = new Date(isoString);
+        
+        // 处理 UTC+X / UTC-X 格式
+        let timeZoneValue = timeZone;
+        if (timeZone.toUpperCase().startsWith('UTC')) {
+            const offsetStr = timeZone.substring(3);
+            const offsetHours = parseFloat(offsetStr);
+            if (!isNaN(offsetHours)) {
+                // 手动计算偏移
+                const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
+                const targetTime = new Date(utc + (3600000 * offsetHours));
+                
+                const month = (targetTime.getMonth() + 1).toString().padStart(2, '0');
+                const day = targetTime.getDate().toString().padStart(2, '0');
+                const hours = targetTime.getHours().toString().padStart(2, '0');
+                const mins = targetTime.getMinutes().toString().padStart(2, '0');
+                
+                if (includeYear) {
+                     return `${targetTime.getFullYear()}-${month}-${day} ${hours}:${mins}`;
+                }
+                return `${month}-${day} ${hours}:${mins}`;
+            }
+        }
+
+        // 使用 Intl.DateTimeFormat 处理 IANA 时区 (Asia/Shanghai 等)
+        const options = {
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+            timeZone: timeZone
+        };
+        
+        if (includeYear) {
+            options.year = 'numeric';
+        }
+
+        // 格式化结果类似 "02/13, 14:30" 或 "2024/02/13, 14:30" (取决于具体 locale)
+        // 统一调整为 MM-DD HH:mm 格式
+        const formatter = new Intl.DateTimeFormat('zh-CN', options);
+        const parts = formatter.formatToParts(date);
+        
+        let y, m, d, h, min;
+        parts.forEach(({ type, value }) => {
+            if (type === 'year') y = value;
+            if (type === 'month') m = value;
+            if (type === 'day') d = value;
+            if (type === 'hour') h = value;
+            if (type === 'minute') min = value;
+        });
+
+        if (includeYear) {
+            return `${y}-${m}-${d} ${h}:${min}`;
+        }
+        return `${m}-${d} ${h}:${min}`;
+
+    } catch (e) {
+        console.error('Time formatting error:', e);
+        return isoString; // Fallback
+    }
 }
 
 /**
