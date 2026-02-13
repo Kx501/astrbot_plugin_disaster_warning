@@ -41,15 +41,18 @@ function ConnectionsGrid() {
             // 在所有连接中找到匹配的项
             const matchedEntries = Object.entries(connections).filter(([key]) => target.matcher(key));
             
-            // 聚合状态
-            // 只要有一个匹配项连接成功，视为在线
-            const isConnected = matchedEntries.some(([, info]) => !!info.connected);
+            // 判断状态：未启用 | 在线 | 离线
+            let status = 'disabled';
+            if (matchedEntries.length > 0) {
+                // 只要有一个匹配项连接成功，视为在线
+                const isConnected = matchedEntries.some(([, info]) => !!info.connected);
+                status = isConnected ? 'online' : 'offline';
+            }
             
             // 聚合重试次数 (取最大值)
             const retryCount = matchedEntries.reduce((max, [, info]) => Math.max(max, info.retry_count || 0), 0);
 
             // 聚合所有已启用的子数据源
-            // sub_sources 结构: { "fan_studio_cenc": true, ... }
             const allSubSources = {};
             matchedEntries.forEach(([, info]) => {
                 if (info.sub_sources) {
@@ -59,95 +62,172 @@ function ConnectionsGrid() {
 
             return {
                 name: target.displayName,
-                connected: isConnected,
+                status: status, // 'online' | 'offline' | 'disabled'
                 retry_count: retryCount,
                 sub_sources: allSubSources
             };
         });
     }, [connections]);
 
-    return (
-        <div className="connections-grid">
-            {displayConnections.map((conn) => (
-                <div key={conn.name} className={`connection-item ${conn.connected ? 'connected' : 'disconnected'}`} style={{ height: 'auto', minHeight: '100px' }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                        <Typography className="conn-name" sx={{ fontWeight: 700 }}>
-                            {conn.name}
-                        </Typography>
-                        <div style={{
-                            width: '8px',
-                            height: '8px',
-                            borderRadius: '50%',
-                            background: conn.connected ? '#4CAF50' : '#F44336',
-                            boxShadow: `0 0 6px ${conn.connected ? '#4CAF50' : '#F44336'}`
-                        }}></div>
-                    </Box>
-                    <div className="conn-status">
-                        <span>{conn.connected ? '在线' : '离线'}</span>
-                        {conn.retry_count > 0 && (
-                            <span style={{ opacity: 0.6, marginLeft: '8px' }}>重试: {conn.retry_count}</span>
-                        )}
-                    </div>
+    // 状态样式配置
+    const statusConfig = {
+        online: {
+            color: '#4CAF50',
+            bgColor: 'rgba(76, 175, 80, 0.04)',
+            borderColor: 'rgba(76, 175, 80, 0.3)',
+            label: '在线',
+            indicatorShadow: '0 0 8px rgba(76, 175, 80, 0.6)'
+        },
+        offline: {
+            color: '#F44336',
+            bgColor: 'rgba(244, 67, 54, 0.04)',
+            borderColor: 'rgba(244, 67, 54, 0.3)',
+            label: '离线',
+            indicatorShadow: '0 0 8px rgba(244, 67, 54, 0.6)'
+        },
+        disabled: {
+            color: '#9E9E9E',
+            bgColor: 'rgba(158, 158, 158, 0.05)',
+            borderColor: 'rgba(0, 0, 0, 0.08)',
+            label: '未启用',
+            indicatorShadow: 'none'
+        }
+    };
 
-                    {/* 子数据源状态展示 */}
-                    {conn.sub_sources && Object.keys(conn.sub_sources).length > 0 && (
-                        <Box sx={{ mt: 1.5, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-                            <Typography variant="caption" sx={{ opacity: 0.6, display: 'block', mb: 1, fontSize: '11px', fontWeight: 600 }}>
-                                数据源详情
+    return (
+        <div className="connections-grid" style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+            gap: '16px'
+        }}>
+            {displayConnections.map((conn) => {
+                const config = statusConfig[conn.status];
+                
+                return (
+                    <Box key={conn.name} sx={{
+                        position: 'relative',
+                        borderRadius: '16px',
+                        border: '1px solid',
+                        borderColor: config.borderColor,
+                        bgcolor: config.bgColor,
+                        p: 2.5,
+                        transition: 'all 0.3s ease',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        minHeight: '140px',
+                        '&:hover': {
+                            transform: 'translateY(-2px)',
+                            boxShadow: '0 6px 16px rgba(0,0,0,0.05)'
+                        }
+                    }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                            <Typography sx={{ fontWeight: 700, fontSize: '1.1rem', color: 'text.primary' }}>
+                                {conn.name}
                             </Typography>
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.8 }}>
-                                {Object.entries(conn.sub_sources)
-                                    .sort(([, a], [, b]) => (a === b ? 0 : a ? -1 : 1))
-                                    .map(([key, enabled]) => {
-                                    const friendlyName = window.formatSourceName ? window.formatSourceName(key) : key;
-                                    
-                                    return (
-                                        <Box key={key} sx={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            p: 0.75,
-                                            borderRadius: 1,
-                                            bgcolor: enabled ? 'rgba(76, 175, 80, 0.08)' : 'action.hover',
-                                            border: '1px solid',
-                                            borderColor: enabled ? 'rgba(76, 175, 80, 0.2)' : 'divider',
-                                            transition: 'all 0.2s'
-                                        }}>
-                                            <Box sx={{
-                                                width: 6,
-                                                height: 6,
-                                                borderRadius: '50%',
-                                                bgcolor: enabled ? 'success.main' : 'text.disabled',
-                                                mr: 1,
-                                                flexShrink: 0,
-                                                boxShadow: enabled ? '0 0 4px rgba(76, 175, 80, 0.4)' : 'none'
-                                            }} />
-                                            <Typography sx={{
-                                                fontSize: '11px',
-                                                fontWeight: enabled ? 600 : 400,
-                                                color: enabled ? 'text.primary' : 'text.secondary',
-                                                flex: 1,
-                                                lineHeight: 1.2
-                                            }}>
-                                                {friendlyName}
-                                            </Typography>
-                                            {!enabled && (
-                                                <Typography sx={{
-                                                    fontSize: '10px',
-                                                    color: 'text.disabled',
-                                                    ml: 0.5,
-                                                    fontWeight: 500
-                                                }}>
-                                                    OFF
-                                                </Typography>
-                                            )}
-                                        </Box>
-                                    );
-                                })}
+                            
+                            {/* 状态指示灯 */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                {conn.retry_count > 0 && conn.status !== 'disabled' && (
+                                    <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 600 }}>
+                                        重试: {conn.retry_count}
+                                    </Typography>
+                                )}
+                                <div style={{
+                                    width: '10px',
+                                    height: '10px',
+                                    borderRadius: '50%',
+                                    backgroundColor: config.color,
+                                    boxShadow: config.indicatorShadow,
+                                    transition: 'background-color 0.3s'
+                                }}></div>
                             </Box>
                         </Box>
-                    )}
-                </div>
-            ))}
+
+                        <Box sx={{ mb: 2 }}>
+                            <Typography sx={{
+                                color: config.color,
+                                fontWeight: 600,
+                                fontSize: '0.95rem',
+                                display: 'flex',
+                                alignItems: 'center'
+                            }}>
+                                {config.label}
+                            </Typography>
+                        </Box>
+
+                        {/* 子数据源状态展示 */}
+                        {conn.sub_sources && Object.keys(conn.sub_sources).length > 0 ? (
+                            <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid', borderColor: 'rgba(0,0,0,0.15)' }}>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                                    <Typography variant="caption" sx={{ opacity: 0.8, fontSize: '12px', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                                        启用的子数据源详情
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ opacity: 0.6, fontSize: '11px', fontWeight: 600 }}>
+                                        {Object.values(conn.sub_sources).filter(Boolean).length} / {Object.keys(conn.sub_sources).length}
+                                    </Typography>
+                                </Box>
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                    {Object.entries(conn.sub_sources)
+                                        .sort(([, a], [, b]) => (a === b ? 0 : a ? -1 : 1))
+                                        .map(([key, enabled]) => {
+                                        const friendlyName = window.formatSourceName ? window.formatSourceName(key) : key;
+                                        
+                                        return (
+                                            <Box key={key} sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                p: 1,
+                                                borderRadius: '8px',
+                                                bgcolor: enabled ? 'var(--md-sys-color-surface)' : 'rgba(0,0,0,0.03)',
+                                                border: '1px solid',
+                                                borderColor: enabled ? 'rgba(76, 175, 80, 0.15)' : 'transparent',
+                                                transition: 'all 0.2s'
+                                            }}>
+                                                <Box sx={{
+                                                    width: 6,
+                                                    height: 6,
+                                                    borderRadius: '50%',
+                                                    bgcolor: enabled ? '#4CAF50' : '#BDBDBD',
+                                                    mr: 1.5,
+                                                    flexShrink: 0,
+                                                }} />
+                                                <Typography sx={{
+                                                    fontSize: '12px',
+                                                    fontWeight: enabled ? 600 : 400,
+                                                    color: enabled ? 'text.primary' : 'text.secondary',
+                                                    flex: 1,
+                                                    lineHeight: 1.2
+                                                }}>
+                                                    {friendlyName}
+                                                </Typography>
+                                                {!enabled && (
+                                                    <Typography sx={{
+                                                        fontSize: '10px',
+                                                        color: 'text.disabled',
+                                                        fontWeight: 600,
+                                                        bgcolor: 'rgba(0,0,0,0.05)',
+                                                        px: 0.8,
+                                                        py: 0.2,
+                                                        borderRadius: '4px'
+                                                    }}>
+                                                        OFF
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                        );
+                                    })}
+                                </Box>
+                            </Box>
+                        ) : (
+                            conn.status !== 'disabled' && (
+                                <Typography variant="caption" sx={{ color: 'text.secondary', fontStyle: 'italic', opacity: 0.7 }}>
+                                    无详细子数据源信息
+                                </Typography>
+                            )
+                        )}
+                    </Box>
+                );
+            })}
         </div>
     );
 }
