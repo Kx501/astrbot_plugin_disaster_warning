@@ -8,6 +8,10 @@ const { createContext, useContext, useReducer, useEffect } = React;
 // 初始状态定义
 const initialState = {
     // 系统核心状态
+    config: {
+        apiUrl: '',
+        displayTimezone: 'UTC+8' // 默认时区
+    },
     status: {
         running: false,
         uptime: '--',
@@ -42,6 +46,8 @@ function appReducer(state, action) {
     switch (action.type) {
         case 'UPDATE_STATUS':
             return { ...state, status: { ...state.status, ...action.payload } };
+        case 'UPDATE_CONFIG':
+            return { ...state, config: { ...state.config, ...action.payload } };
         case 'UPDATE_STATS':
             const stats = action.payload;
             
@@ -133,8 +139,8 @@ function AppProvider({ children }) {
         localStorage.setItem('theme', state.theme);
     }, [state.theme]);
 
-    // 初始化时获取一次状态以确保版本号等静态信息被加载
-    useEffect(() => {
+    // 封装刷新数据的函数
+    const refreshData = React.useCallback(() => {
         fetch('/api/status')
             .then(res => res.json())
             .then(data => {
@@ -142,7 +148,8 @@ function AppProvider({ children }) {
                     running: data.running,
                     activeConnections: data.active_connections,
                     totalConnections: data.total_connections,
-                    uptime: data.uptime
+                    uptime: data.uptime,
+                    subSourceStatus: data.sub_source_status // 新增：子数据源状态
                 };
 
                 // version 可能不存在于旧版接口返回中，但在新版应该有
@@ -158,8 +165,29 @@ function AppProvider({ children }) {
 
                 dispatch({ type: 'UPDATE_STATUS', payload: statusUpdate });
             })
-            .catch(err => console.error('Failed to fetch initial status:', err));
+            .catch(err => console.error('Failed to fetch status:', err));
     }, []);
+
+    // 获取配置信息（包括时区）
+    const fetchConfig = React.useCallback(() => {
+        fetch('/api/config')
+            .then(res => res.json())
+            .then(data => {
+                if (data.display_timezone) {
+                    dispatch({
+                        type: 'UPDATE_CONFIG',
+                        payload: { displayTimezone: data.display_timezone }
+                    });
+                }
+            })
+            .catch(err => console.error('Failed to fetch config:', err));
+    }, []);
+
+    // 初始化时获取状态和配置
+    useEffect(() => {
+        refreshData();
+        fetchConfig();
+    }, [refreshData, fetchConfig]);
 
     // 运行时长计时器
     // 每秒更新一次 uptime 显示，格式化为 天/小时/分/秒
@@ -193,7 +221,7 @@ function AppProvider({ children }) {
     }, [state.status.startTime, state.status.running]);
 
     return (
-        <AppContext.Provider value={{ state, dispatch }}>
+        <AppContext.Provider value={{ state, dispatch, refreshData }}>
             {children}
         </AppContext.Provider>
     );
