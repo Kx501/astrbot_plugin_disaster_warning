@@ -4,9 +4,26 @@ function StatusView({ onOpenSimulation }) {
     const { state, refreshData } = useAppContext();
     const { status } = state;
     const [reconnecting, setReconnecting] = React.useState(false);
+    const [refreshing, setRefreshing] = React.useState(false);
+    const { sendMessage } = useWebSocket(); // 获取 WebSocket 发送消息函数
 
-    const refreshAll = () => {
-        window.location.reload();
+    const refreshAll = async () => {
+        setRefreshing(true);
+        try {
+            // 1. 通过 HTTP API 刷新状态
+            await refreshData();
+            
+            // 2. 通过 WebSocket 请求完整更新
+            sendMessage({ type: 'refresh' });
+            
+            // 延迟一下让数据有时间更新
+            setTimeout(() => {
+                setRefreshing(false);
+            }, 500);
+        } catch (e) {
+            console.error('刷新数据失败:', e);
+            setRefreshing(false);
+        }
     };
 
     const handleReconnect = async () => {
@@ -113,9 +130,25 @@ function StatusView({ onOpenSimulation }) {
                             <button
                                 className="btn btn-action"
                                 onClick={refreshAll}
+                                disabled={refreshing}
                             >
-                                <span style={{ fontSize: '18px' }}>🔄</span>
-                                刷新控制台数据
+                                {refreshing ? (
+                                    <>
+                                        <span className="spinner" style={{
+                                            width: '14px',
+                                            height: '14px',
+                                            border: '2px solid rgba(0,0,0,0.2)',
+                                            borderTopColor: 'var(--md-sys-color-primary)',
+                                            borderRadius: '50%'
+                                        }}></span>
+                                        刷新中...
+                                    </>
+                                ) : (
+                                    <>
+                                        <span style={{ fontSize: '18px' }}>🔄</span>
+                                        刷新控制台数据
+                                    </>
+                                )}
                             </button>
                         </Box>
                     </div>
