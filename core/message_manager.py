@@ -29,6 +29,7 @@ from ..models.models import (
     EarthquakeData,
     TsunamiData,
     WeatherAlarmData,
+    DisasterType,
 )
 from ..utils.formatters import (
     CWAReportFormatter,
@@ -573,6 +574,10 @@ class MessagePushManager:
                 # 注入自定义缩放级别，默认设为 5
                 zoom_level = message_format_config.get("map_zoom_level", 5)
                 context["zoom_level"] = zoom_level
+                
+                # 注入地图源配置
+                map_source = message_format_config.get("map_source", "amap")
+                context["map_source"] = map_source
 
                 # 获取模板名称配置
                 template_name = message_format_config.get(
@@ -581,8 +586,17 @@ class MessagePushManager:
 
                 # 加载模板
                 resources_dir = os.path.join(self.plugin_root, "resources")
+                
+                # 根据 playwright 模式选择模板
+                playwright_mode = self.config.get("message_format", {}).get("playwright_mode", "local")
+                if playwright_mode == "remote":
+                    # 远程模式：使用 CDN 版本的模板
+                    template_filename = "global_quake_remote.html"
+                else:
+                    template_filename = "global_quake.html"
+                
                 template_path = os.path.join(
-                    resources_dir, "card_templates", template_name, "global_quake.html"
+                    resources_dir, "card_templates", template_name, template_filename
                 )
 
                 if not os.path.exists(template_path):
@@ -592,14 +606,22 @@ class MessagePushManager:
                         template_content = f.read()
 
                     # 计算 Leaflet.js 的绝对路径
-                    leaflet_path = os.path.abspath(
-                        os.path.join(resources_dir, "card_templates", "leaflet.js")
-                    )
-                    leaflet_css_path = os.path.abspath(
-                        os.path.join(resources_dir, "card_templates", "leaflet.css")
-                    )
-                    context["leaflet_js_url"] = f"file://{leaflet_path}"
-                    context["leaflet_css_url"] = f"file://{leaflet_css_path}"
+                    # 根据 playwright 模式选择资源 URL
+                    playwright_mode = self.config.get("message_format", {}).get("playwright_mode", "local")
+                    if playwright_mode == "remote":
+                        # 远程模式：使用 CDN
+                        context["leaflet_js_url"] = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+                        context["leaflet_css_url"] = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+                    else:
+                        # 本地模式：使用本地文件
+                        leaflet_path = os.path.abspath(
+                            os.path.join(resources_dir, "card_templates", "leaflet.js")
+                        )
+                        leaflet_css_path = os.path.abspath(
+                            os.path.join(resources_dir, "card_templates", "leaflet.css")
+                        )
+                        context["leaflet_js_url"] = f"file://{leaflet_path}"
+                        context["leaflet_css_url"] = f"file://{leaflet_css_path}"
 
                     # Jinja2 渲染
                     template = Template(template_content)
@@ -811,13 +833,24 @@ class MessagePushManager:
                 os.path.join(resources_dir, "card_templates", "leaflet.css")
             )
 
+            # 根据 playwright 模式选择资源 URL
+            playwright_mode = self.config.get("message_format", {}).get("playwright_mode", "local")
+            if playwright_mode == "remote":
+                # 远程模式：使用 CDN
+                leaflet_js_url = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+                leaflet_css_url = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+            else:
+                # 本地模式：使用本地文件
+                leaflet_js_url = f"file://{leaflet_path}"
+                leaflet_css_url = f"file://{leaflet_css_path}"
+
             context = {
                 "latitude": lat,
                 "longitude": lon,
                 "zoom_level": zoom_level,
                 "map_source": map_source,
-                "leaflet_js_url": f"file://{leaflet_path}",
-                "leaflet_css_url": f"file://{leaflet_css_path}",
+                "leaflet_js_url": leaflet_js_url,
+                "leaflet_css_url": leaflet_css_url,
             }
 
             # 渲染 HTML
@@ -896,3 +929,96 @@ class MessagePushManager:
 
         except Exception as e:
             logger.error(f"[灾害预警] 清理临时文件夹失败: {e}")
+
+    async def simulate_custom_event(
+        self,
+        session: str,
+        disaster_type: str,
+        test_type: str,
+        custom_params: dict[str, Any],
+    ) -> str:
+        """
+        模拟并推送一个自定义的灾害事件
+        """
+        try:
+            logger.debug(
+                f"[灾害预警] 开始模拟事件: type={disaster_type}, test_type={test_type}"
+            )
+
+            # 1. 获取数据源
+            data_source = DATA_SOURCE_MAPPING.get(test_type)
+            if not data_source:
+                return f"❌ 未知的测试类型: {test_type}"
+
+            # 2. 创建事件数据
+            event_id = f"sim_{int(time.time())}"
+            now = datetime.now(timezone.utc)
+            event_data = None
+            disaster_type_enum = DisasterType.EARTHQUAKE
+
+            if disaster_type == "earthquake":
+                disaster_type_enum = DisasterType.EARTHQUAKE_WARNING
+                event_data = EarthquakeData(
+                    id=event_id,
+                    event_id=event_id,
+                    source=data_source,
+                    disaster_type=disaster_type_enum,
+                    shock_time=now,
+                    latitude=float(custom_params.get("latitude", 39.9042)),
+                    longitude=float(custom_params.get("longitude", 116.4074)),
+                    place_name=custom_params.get("place_name", "北京天安门广场"),
+                    depth=float(custom_params.get("depth", 10.0)),
+                    magnitude=float(custom_params.get("magnitude", 8.0)),
+                    intensity=float(custom_params.get("intensity", 10.0)),
+                    scale=float(custom_params.get("scale", 6.0)),
+                    is_final=True,
+                    updates=99,
+                    report_num=99,
+                    source_id=test_type,
+                    info_type="模拟",
+                    domestic_tsunami="无",
+                )
+            elif disaster_type == "tsunami":
+                disaster_type_enum = DisasterType.TSUNAMI
+                event_data = TsunamiData(
+                    id=event_id,
+                    code="9999",
+                    source=data_source,
+                    title="模拟海啸预警",
+                    level="红色",
+                    issue_time=now,
+                    source_id=test_type,
+                )
+            elif disaster_type == "weather":
+                disaster_type_enum = DisasterType.WEATHER_ALARM
+                event_data = WeatherAlarmData(
+                    id=event_id,
+                    source=data_source,
+                    headline="模拟气象预警",
+                    title="模拟高温红色预警",
+                    description="预计未来24小时内，模拟地区最高气温将升至40℃以上。",
+                    type="0101", # 高温红色预警代码
+                    effective_time=now,
+                    source_id=test_type,
+                )
+            else:
+                return f"❌ 不支持的灾害类型: {disaster_type}"
+
+            # 3. 创建统一事件
+            event = DisasterEvent(
+                id=event_id,
+                data=event_data,
+                source=data_source,
+                disaster_type=disaster_type_enum,
+                source_id=test_type,
+            )
+
+            # 4. 构建并发送消息
+            message = await self.build_message_async(event)
+            await self._send_message(session, message)
+            logger.info(f"[灾害预警] ✅ 模拟事件已成功推送到 {session}")
+            return f"✅ 模拟 {disaster_type} 事件已成功推送到 {session}"
+
+        except Exception as e:
+            logger.error(f"[灾害预警] 模拟事件推送失败: {e}", exc_info=True)
+            return f"❌ 模拟事件推送失败: {e}"

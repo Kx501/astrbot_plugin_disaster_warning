@@ -490,15 +490,19 @@
         "description": "地图瓦片源",
         "type": "string",
         "options": [
+          "amap",
           "petallight",
           "petaldark",
+          "osm",
+          "cartodb_light",
+          "cartodb_dark",
           "arcwi",
           "arcwob",
           "arcwh",
           "geovis"
         ],
-        "default": "petallight",
-        "hint": "选择地图渲染使用的瓦片源。推荐使用 PetalMap 矢量图 亮 (petallight)"
+        "default": "amap",
+        "hint": "选择地图渲染使用的瓦片源。amap=高德地图(国内推荐), petallight/petaldark=PetalMap矢量图, osm=OpenStreetMap, cartodb=CartoDB地图"
       },
       "map_zoom_level": {
         "description": "地图缩放级别",

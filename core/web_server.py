@@ -555,12 +555,6 @@ class WebAdminServer:
         ):
             """
             简单测试推送 - 使用预设的测试数据
-
-            参数:
-            - target_session: 目标会话UMO (可选，默认使用第一个配置的会话)
-            - disaster_type: 灾害类型 (earthquake/tsunami/weather)
-
-            注意: 此端点使用预设的测试数据。如需自定义参数，请使用 /api/simulate 端点。
             """
             try:
                 if not self.disaster_service:
@@ -581,18 +575,42 @@ class WebAdminServer:
                             {"error": "未配置目标会话"}, status_code=400
                         )
 
-                # 调用 test_push，使用默认测试格式
-                result = await self.disaster_service.message_manager.test_push(
-                    final_target_session,
-                    disaster_type,
-                    test_type=None,  # 使用默认格式
+                # 根据灾害类型选择一个合适的 test_type
+                if disaster_type == "earthquake":
+                    test_type = "cenc_fanstudio"
+                    custom_params = {
+                        "magnitude": 6.8,
+                        "place_name": "模拟-中国台湾花莲县",
+                        "depth": 10,
+                    }
+                elif disaster_type == "tsunami":
+                    test_type = "china_tsunami_fanstudio"
+                    custom_params = {}
+                elif disaster_type == "weather":
+                    test_type = "china_weather_fanstudio"
+                    custom_params = {}
+                else:
+                    return JSONResponse(
+                        {"error": f"不支持的灾害类型: {disaster_type}"},
+                        status_code=400,
+                    )
+
+                # 调用新的 simulate_custom_event
+                result = (
+                    await self.disaster_service.message_manager.simulate_custom_event(
+                        session=final_target_session,
+                        disaster_type=disaster_type,
+                        test_type=test_type,
+                        custom_params=custom_params,
+                    )
                 )
+
                 return {
                     "success": "✅" in result if result else False,
                     "message": result,
                 }
             except Exception as e:
-                logger.error(f"[灾害预警] 测试推送失败: {e}")
+                logger.error(f"[灾害预警] 测试推送失败: {e}", exc_info=True)
                 return JSONResponse({"error": str(e)}, status_code=500)
 
         @self.app.get("/api/simulation-params")
