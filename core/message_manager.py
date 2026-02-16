@@ -176,9 +176,11 @@ class MessagePushManager:
         # 检查是否需要预启动浏览器
         # 如果启用了地图瓦片 (include_map) 或 Global Quake 卡片 (use_global_quake_card)
         # 则在后台异步预热浏览器，避免第一次推送时因启动浏览器造成延迟
+        # 注意：远程模式使用 HTTP API，不需要预热
         msg_config = config.get("message_format", {})
-        if msg_config.get("include_map", False) or msg_config.get(
-            "use_global_quake_card", False
+        if (
+            playwright_mode == "local"
+            and (msg_config.get("include_map", False) or msg_config.get("use_global_quake_card", False))
         ):
             logger.debug("[灾害预警] 检测到已启用卡片渲染功能，正在后台预热浏览器...")
             asyncio.create_task(self.browser_manager.initialize())

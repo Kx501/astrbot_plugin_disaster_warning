@@ -1,19 +1,19 @@
 """
 灾害预警插件 - 数据库管理模块
-使用 SQLite 存储历史事件数据
+使用 SQLite 存储历史事件数据（异步版本，使用 aiosqlite）
 """
 
 import json
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+import aiosqlite
 from astrbot.api import logger
 
 
 class DatabaseManager:
-    """数据库管理器 - 负责历史事件数据的持久化存储"""
+    """数据库管理器 - 负责历史事件数据的持久化存储（异步版本）"""
 
     def __init__(self, db_path: Path):
         """
@@ -23,25 +23,22 @@ class DatabaseManager:
             db_path: 数据库文件路径
         """
         self.db_path = db_path
-        self.connection: Optional[sqlite3.Connection] = None
-        self._init_database()
+        self.connection: Optional[aiosqlite.Connection] = None
 
-    def _init_database(self):
-        """初始化数据库，创建必要的表结构"""
+    async def initialize(self):
+        """异步初始化数据库，创建必要的表结构"""
         try:
             # 确保数据目录存在
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
             # 连接数据库
-            self.connection = sqlite3.connect(
-                str(self.db_path), check_same_thread=False
-            )
-            self.connection.row_factory = sqlite3.Row  # 返回字典形式的结果
+            self.connection = await aiosqlite.connect(str(self.db_path))
+            self.connection.row_factory = aiosqlite.Row  # 返回字典形式的结果
 
-            cursor = self.connection.cursor()
+            cursor = await self.connection.cursor()
 
             # 创建事件表
-            cursor.execute(
+            await cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,45 +67,45 @@ class DatabaseManager:
             )
 
             # 创建索引以提高查询性能
-            cursor.execute(
+            await cursor.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_event_id ON events(event_id)
             """
             )
-            cursor.execute(
+            await cursor.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_real_event_id ON events(real_event_id)
             """
             )
-            cursor.execute(
+            await cursor.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_unique_id ON events(unique_id)
             """
             )
-            cursor.execute(
+            await cursor.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_source ON events(source)
             """
             )
-            cursor.execute(
+            await cursor.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_type ON events(type)
             """
             )
-            cursor.execute(
+            await cursor.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_timestamp ON events(timestamp)
             """
             )
 
-            self.connection.commit()
+            await self.connection.commit()
             logger.info(f"[灾害预警] 数据库初始化完成: {self.db_path}")
 
         except Exception as e:
             logger.error(f"[灾害预警] 数据库初始化失败: {e}")
             raise
 
-    def insert_event(self, event_data: dict[str, Any]) -> int:
+    async def insert_event(self, event_data: dict[str, Any]) -> int:
         """
         插入新事件记录
 
@@ -119,7 +116,7 @@ class DatabaseManager:
             插入记录的 ID
         """
         try:
-            cursor = self.connection.cursor()
+            cursor = await self.connection.cursor()
 
             # 将字典和列表字段序列化为 JSON
             raw_data = json.dumps(event_data.get("raw_data", {}), ensure_ascii=False)
@@ -128,7 +125,7 @@ class DatabaseManager:
             # 确保 timestamp 总是有值，避免 NOT NULL 约束失败
             timestamp = event_data.get("timestamp") or datetime.now().isoformat()
 
-            cursor.execute(
+            await cursor.execute(
                 """
                 INSERT INTO events (
                     event_id, real_event_id, unique_id, type, source, 
@@ -159,15 +156,15 @@ class DatabaseManager:
                 ),
             )
 
-            self.connection.commit()
+            await self.connection.commit()
             return cursor.lastrowid
 
         except Exception as e:
             logger.error(f"[灾害预警] 插入事件记录失败: {e}")
-            self.connection.rollback()
+            await self.connection.rollback()
             raise
 
-    def update_event(
+    async def update_event(
         self, event_id: str, source: str, event_data: dict[str, Any]
     ) -> bool:
         """
@@ -182,7 +179,7 @@ class DatabaseManager:
             是否更新成功
         """
         try:
-            cursor = self.connection.cursor()
+            cursor = await self.connection.cursor()
 
             # 将字典和列表字段序列化为 JSON
             raw_data = json.dumps(event_data.get("raw_data", {}), ensure_ascii=False)
@@ -191,7 +188,7 @@ class DatabaseManager:
             # 确保 timestamp 总是有值，避免 NOT NULL 约束失败
             timestamp = event_data.get("timestamp") or datetime.now().isoformat()
 
-            cursor.execute(
+            await cursor.execute(
                 """
                 UPDATE events SET
                     real_event_id = ?,
@@ -233,15 +230,15 @@ class DatabaseManager:
                 ),
             )
 
-            self.connection.commit()
+            await self.connection.commit()
             return cursor.rowcount > 0
 
         except Exception as e:
             logger.error(f"[灾害预警] 更新事件记录失败: {e}")
-            self.connection.rollback()
+            await self.connection.rollback()
             raise
 
-    def get_recent_events(self, limit: int = 250) -> list[dict[str, Any]]:
+    async def get_recent_events(self, limit: int = 250) -> list[dict[str, Any]]:
         """
         获取最近的事件记录
 
@@ -252,8 +249,8 @@ class DatabaseManager:
             事件记录列表
         """
         try:
-            cursor = self.connection.cursor()
-            cursor.execute(
+            cursor = await self.connection.cursor()
+            await cursor.execute(
                 """
                 SELECT * FROM events
                 ORDER BY timestamp DESC
@@ -263,7 +260,8 @@ class DatabaseManager:
             )
 
             events = []
-            for row in cursor.fetchall():
+            rows = await cursor.fetchall()
+            for row in rows:
                 event = dict(row)
                 # 反序列化 JSON 字段
                 if event.get("raw_data"):
@@ -284,7 +282,7 @@ class DatabaseManager:
             logger.error(f"[灾害预警] 查询最近事件失败: {e}")
             return []
 
-    def find_event_by_id(
+    async def find_event_by_id(
         self, event_id: str, source: str
     ) -> Optional[dict[str, Any]]:
         """
@@ -298,8 +296,8 @@ class DatabaseManager:
             事件记录，如果不存在返回 None
         """
         try:
-            cursor = self.connection.cursor()
-            cursor.execute(
+            cursor = await self.connection.cursor()
+            await cursor.execute(
                 """
                 SELECT * FROM events
                 WHERE event_id = ? AND source = ?
@@ -309,7 +307,7 @@ class DatabaseManager:
                 (event_id, source),
             )
 
-            row = cursor.fetchone()
+            row = await cursor.fetchone()
             if row:
                 event = dict(row)
                 # 反序列化 JSON 字段
@@ -331,7 +329,7 @@ class DatabaseManager:
             logger.error(f"[灾害预警] 查找事件失败: {e}")
             return None
 
-    def find_event_by_real_id(
+    async def find_event_by_real_id(
         self, real_event_id: str, source: str
     ) -> Optional[dict[str, Any]]:
         """
@@ -345,8 +343,8 @@ class DatabaseManager:
             事件记录，如果不存在返回 None
         """
         try:
-            cursor = self.connection.cursor()
-            cursor.execute(
+            cursor = await self.connection.cursor()
+            await cursor.execute(
                 """
                 SELECT * FROM events
                 WHERE real_event_id = ? AND source = ?
@@ -356,7 +354,7 @@ class DatabaseManager:
                 (real_event_id, source),
             )
 
-            row = cursor.fetchone()
+            row = await cursor.fetchone()
             if row:
                 event = dict(row)
                 # 反序列化 JSON 字段
@@ -378,7 +376,7 @@ class DatabaseManager:
             logger.error(f"[灾害预警] 根据真实ID查找事件失败: {e}")
             return None
 
-    def get_statistics(self) -> dict[str, Any]:
+    async def get_statistics(self) -> dict[str, Any]:
         """
         获取数据库统计信息
 
@@ -386,31 +384,34 @@ class DatabaseManager:
             统计信息字典
         """
         try:
-            cursor = self.connection.cursor()
+            cursor = await self.connection.cursor()
 
             # 总事件数
-            cursor.execute("SELECT COUNT(*) as total FROM events")
-            total = cursor.fetchone()["total"]
+            await cursor.execute("SELECT COUNT(*) as total FROM events")
+            total_row = await cursor.fetchone()
+            total = total_row["total"]
 
             # 按类型统计
-            cursor.execute(
+            await cursor.execute(
                 """
                 SELECT type, COUNT(*) as count
                 FROM events
                 GROUP BY type
             """
             )
-            by_type = {row["type"]: row["count"] for row in cursor.fetchall()}
+            by_type_rows = await cursor.fetchall()
+            by_type = {row["type"]: row["count"] for row in by_type_rows}
 
             # 按数据源统计
-            cursor.execute(
+            await cursor.execute(
                 """
                 SELECT source, COUNT(*) as count
                 FROM events
                 GROUP BY source
             """
             )
-            by_source = {row["source"]: row["count"] for row in cursor.fetchall()}
+            by_source_rows = await cursor.fetchall()
+            by_source = {row["source"]: row["count"] for row in by_source_rows}
 
             # 数据库文件大小
             db_size_mb = self.db_path.stat().st_size / (1024 * 1024)
@@ -426,12 +427,17 @@ class DatabaseManager:
             logger.error(f"[灾害预警] 获取统计信息失败: {e}")
             return {}
 
-    def close(self):
+    async def close(self):
         """关闭数据库连接"""
         if self.connection:
-            self.connection.close()
+            await self.connection.close()
             logger.info("[灾害预警] 数据库连接已关闭")
 
-    def __del__(self):
-        """析构函数，确保连接被关闭"""
-        self.close()
+    async def __aenter__(self):
+        """异步上下文管理器入口"""
+        await self.initialize()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """异步上下文管理器退出"""
+        await self.close()
