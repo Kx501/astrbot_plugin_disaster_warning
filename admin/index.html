@@ -23,8 +23,8 @@
     <script crossorigin src="lib/react.production.min.js" defer></script>
     <script crossorigin src="lib/react-dom.production.min.js" defer></script>
 
-    <!-- Babel Standalone (用于浏览器实时编译 JSX) - defer加载 -->
-    <script src="lib/babel.min.js" defer></script>
+    <!-- Babel Standalone (用于浏览器实时编译 JSX) - 不使用defer，确保在JSX脚本前加载 -->
+    <script src="lib/babel.min.js"></script>
 
     <!-- Material UI 组件库 - defer加载 -->
     <script src="lib/material-ui.production.min.js" defer></script>
@@ -111,36 +111,36 @@
     <script src="js/utils/formatters.js" defer></script>
 
     <!-- Context -->
-    <script type="text/babel" src="js/context/AppContext.jsx" defer></script>
+    <script type="text/babel" src="js/context/AppContext.jsx"></script>
 
     <!-- Hooks -->
-    <script type="text/babel" src="js/hooks/useWebSocket.js" defer></script>
-    <script type="text/babel" src="js/hooks/useApi.js" defer></script>
+    <script type="text/babel" src="js/hooks/useWebSocket.js"></script>
+    <script type="text/babel" src="js/hooks/useApi.js"></script>
 
     <!-- 组件 (Components) -->
-    <script type="text/babel" src="js/components/Toast.jsx" defer></script>
-    <script type="text/babel" src="js/components/Header.jsx" defer></script>
-    <script type="text/babel" src="js/components/Sidebar.jsx" defer></script>
-    <script type="text/babel" src="js/components/StatusCard.jsx" defer></script>
-    <script type="text/babel" src="js/components/StatsCard.jsx" defer></script>
-    <script type="text/babel" src="js/components/ConnectionsGrid.jsx" defer></script>
-    <script type="text/babel" src="js/components/NewsTicker.jsx" defer></script>
-    <script type="text/babel" src="js/components/HorizontalTimeline.jsx" defer></script>
-    <script type="text/babel" src="js/components/MagnitudeChart.jsx" defer></script>
-    <script type="text/babel" src="js/components/TrendChart.jsx" defer></script>
-    <script type="text/babel" src="js/components/CalendarHeatmap.jsx" defer></script>
-    <script type="text/babel" src="js/components/EventsList.jsx" defer></script>
-    <script type="text/babel" src="js/components/ConfigRenderer.jsx" defer></script>
-    <script type="text/babel" src="js/components/SimulationModal.jsx" defer></script>
+    <script type="text/babel" src="js/components/Toast.jsx"></script>
+    <script type="text/babel" src="js/components/Header.jsx"></script>
+    <script type="text/babel" src="js/components/Sidebar.jsx"></script>
+    <script type="text/babel" src="js/components/StatusCard.jsx"></script>
+    <script type="text/babel" src="js/components/StatsCard.jsx"></script>
+    <script type="text/babel" src="js/components/ConnectionsGrid.jsx"></script>
+    <script type="text/babel" src="js/components/NewsTicker.jsx"></script>
+    <script type="text/babel" src="js/components/HorizontalTimeline.jsx"></script>
+    <script type="text/babel" src="js/components/MagnitudeChart.jsx"></script>
+    <script type="text/babel" src="js/components/TrendChart.jsx"></script>
+    <script type="text/babel" src="js/components/CalendarHeatmap.jsx"></script>
+    <script type="text/babel" src="js/components/EventsList.jsx"></script>
+    <script type="text/babel" src="js/components/ConfigRenderer.jsx"></script>
+    <script type="text/babel" src="js/components/SimulationModal.jsx"></script>
 
     <!-- 视图 (Views) -->
-    <script type="text/babel" src="js/views/StatusView.jsx" defer></script>
-    <script type="text/babel" src="js/views/EventsView.jsx" defer></script>
-    <script type="text/babel" src="js/views/StatsView.jsx" defer></script>
-    <script type="text/babel" src="js/views/ConfigView.jsx" defer></script>
+    <script type="text/babel" src="js/views/StatusView.jsx"></script>
+    <script type="text/babel" src="js/views/EventsView.jsx"></script>
+    <script type="text/babel" src="js/views/StatsView.jsx"></script>
+    <script type="text/babel" src="js/views/ConfigView.jsx"></script>
 
     <!-- 主入口 -->
-    <script type="text/babel" src="js/app.jsx" defer></script>
+    <script type="text/babel" src="js/app.jsx"></script>
     
     <script>
         // 当React应用渲染完成后，移除加载骨架屏

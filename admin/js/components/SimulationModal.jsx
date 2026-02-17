@@ -14,7 +14,7 @@ function SimulationModal({ open, onClose }) {
     const api = useApi();
     const { showToast } = useToast(); // 使用 Toast 提示
     const [disasterType, setDisasterType] = useState('earthquake');
-    const [testType, setTestType] = useState('china');
+    const [testType, setTestType] = useState('cea_fanstudio');
     const [targetGroup, setTargetGroup] = useState('');
     const [customParams, setCustomParams] = useState({
         latitude: 39.9,
@@ -103,7 +103,9 @@ function SimulationModal({ open, onClose }) {
 
     const getDisasterTypeOptions = () => {
         if (!params) return [];
-        return Object.keys(params.disaster_types || {});
+        // 只返回 earthquake，因为后端只支持地震模拟
+        const allTypes = Object.keys(params.disaster_types || {});
+        return allTypes.filter(type => type === 'earthquake');
     };
 
     const getTestTypeOptions = () => {
@@ -154,17 +156,19 @@ function SimulationModal({ open, onClose }) {
                             label="灾害类型"
                             onChange={(e) => {
                                 setDisasterType(e.target.value);
-                                setTestType('');
+                                setTestType('cea_fanstudio');
                             }}
+                            disabled
                         >
                             {getDisasterTypeOptions().map(type => (
                                 <MenuItem key={type} value={type}>
-                                    {type === 'earthquake' ? '🌍 地震' :
-                                        type === 'tsunami' ? '🌊 海啸' :
-                                            type === 'weather' ? '☁️ 气象预警' : type}
+                                    {type === 'earthquake' ? '🌍 地震（仅支持）' : type}
                                 </MenuItem>
                             ))}
                         </Select>
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 1.5 }}>
+                            目前仅支持地震模拟，其他灾害类型正在开发中
+                        </Typography>
                     </FormControl>
 
                     {/* 测试格式 */}

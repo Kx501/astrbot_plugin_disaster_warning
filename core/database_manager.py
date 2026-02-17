@@ -267,12 +267,12 @@ class DatabaseManager:
                 if event.get("raw_data"):
                     try:
                         event["raw_data"] = json.loads(event["raw_data"])
-                    except:
+                    except (json.JSONDecodeError, TypeError, ValueError):
                         event["raw_data"] = {}
                 if event.get("history"):
                     try:
                         event["history"] = json.loads(event["history"])
-                    except:
+                    except (json.JSONDecodeError, TypeError, ValueError):
                         event["history"] = []
                 events.append(event)
 
@@ -314,12 +314,12 @@ class DatabaseManager:
                 if event.get("raw_data"):
                     try:
                         event["raw_data"] = json.loads(event["raw_data"])
-                    except:
+                    except (json.JSONDecodeError, TypeError, ValueError):
                         event["raw_data"] = {}
                 if event.get("history"):
                     try:
                         event["history"] = json.loads(event["history"])
-                    except:
+                    except (json.JSONDecodeError, TypeError, ValueError):
                         event["history"] = []
                 return event
 
@@ -361,12 +361,12 @@ class DatabaseManager:
                 if event.get("raw_data"):
                     try:
                         event["raw_data"] = json.loads(event["raw_data"])
-                    except:
+                    except (json.JSONDecodeError, TypeError, ValueError):
                         event["raw_data"] = {}
                 if event.get("history"):
                     try:
                         event["history"] = json.loads(event["history"])
-                    except:
+                    except (json.JSONDecodeError, TypeError, ValueError):
                         event["history"] = []
                 return event
 
@@ -431,6 +431,7 @@ class DatabaseManager:
         """关闭数据库连接"""
         if self.connection:
             await self.connection.close()
+            self.connection = None
             logger.info("[灾害预警] 数据库连接已关闭")
 
     async def __aenter__(self):

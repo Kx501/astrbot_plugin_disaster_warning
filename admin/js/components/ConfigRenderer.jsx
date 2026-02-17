@@ -491,6 +491,7 @@ function ConfigField({ fieldKey, schema, value, onChange, depth = 0, path = '', 
  * 包含了配置的获取、状态管理和保存逻辑
  */
 function ConfigRenderer() {
+    const { showToast } = useToast();
     const [schema, setSchema] = useState(null);
     const [config, setConfig] = useState(null);
     const [expandedKeys, setExpandedKeys] = useState([]);

@@ -9,14 +9,10 @@ let connectionListeners = new Set(); // 存储所有订阅者
 function useWebSocket() {
     const { state, dispatch } = useAppContext();
     const listenerIdRef = useRef(null);
+    const handleWsMessageRef = useRef(null);
 
-    const getWsUrl = () => {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        return `${protocol}//${window.location.host}/ws`;
-    };
-
-    // 使用 useCallback 确保 handleWsMessage 稳定
-    const handleWsMessage = useCallback((msg) => {
+    // 使用 useRef 存储最新的消息处理函数，避免重复注册监听器
+    handleWsMessageRef.current = (msg) => {
         if (msg.type === 'full_update' || msg.type === 'update' || msg.type === 'event') {
             const data = msg.data;
 
@@ -65,7 +61,12 @@ function useWebSocket() {
         } else if (msg.type === 'pong') {
             // 心跳响应
         }
-    }, [dispatch, state.status.version]); // 添加依赖
+    };
+
+    const getWsUrl = () => {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${protocol}//${window.location.host}/ws`;
+    };
 
     const scheduleReconnect = () => {
         if (globalReconnectTimer) return;
@@ -155,7 +156,7 @@ function useWebSocket() {
                 dispatch({ type: 'SET_WS_CONNECTED', payload: false });
             },
             onMessage: (msg) => {
-                handleWsMessage(msg);
+                handleWsMessageRef.current(msg);
             }
         };
         
@@ -176,16 +177,21 @@ function useWebSocket() {
             connectionListeners.delete(listener);
             console.log(`[WS] 移除监听器 ${listenerId}，剩余监听器数: ${connectionListeners.size}`);
             
-            // 如果没有监听器了，清理重连定时器（但保持连接）
+            // 如果没有监听器了，清理重连定时器并关闭连接
             if (connectionListeners.size === 0) {
                 if (globalReconnectTimer) {
                     clearTimeout(globalReconnectTimer);
                     globalReconnectTimer = null;
                 }
-                console.log('[WS] 所有监听器已移除，连接将保持但不再重连');
+                if (globalWsInstance) {
+                    console.log('[WS] 所有监听器已移除，关闭全局连接');
+                    globalWsInstance.onclose = null; // 移除 onclose 处理器防止触发重连
+                    globalWsInstance.close();
+                    globalWsInstance = null;
+                }
             }
         };
-    }, [dispatch, handleWsMessage]); // 添加依赖
+    }, [dispatch]); // 只依赖 dispatch，不依赖 handleWsMessage
 
     const sendMessage = (msg) => {
         if (globalWsInstance && globalWsInstance.readyState === WebSocket.OPEN) {

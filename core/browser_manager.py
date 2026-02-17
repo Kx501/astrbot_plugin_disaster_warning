@@ -342,7 +342,7 @@ class BrowserManager:
         start_time = time.time()
         
         # 构建请求 URL
-        api_url = self._server_url.replace("http://", "http://").replace("https://", "https://")
+        api_url = self._server_url
         if not api_url.endswith("/"):
             api_url += "/"
         api_url += "screenshot"

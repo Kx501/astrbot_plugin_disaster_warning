@@ -255,25 +255,6 @@ class WebAdminServer:
                 # 获取所有预期的数据源
                 expected_sources = self._get_expected_data_sources()
 
-                # 并发测试所有数据源的延迟
-                ping_tasks = {}
-                for source_name in expected_sources.keys():
-                    host = self._get_data_source_host(source_name)
-                    if host:
-                        ping_tasks[source_name] = self._ping_host(host, timeout=1.0)
-                
-                # 等待所有ping完成
-                ping_results = {}
-                if ping_tasks:
-                    results = await asyncio.gather(*ping_tasks.values(), return_exceptions=True)
-                    for source_name, result in zip(ping_tasks.keys(), results):
-                        if isinstance(result, Exception):
-                            ping_results[source_name] = None
-                        else:
-                            ping_results[source_name] = result
-                        # 更新缓存
-                        self._latency_cache[source_name] = ping_results[source_name]
-
                 # 合并：确保所有预期的数据源都显示，未连接的标记为 disconnected
                 merged_connections = {}
                 for source_name, display_name in expected_sources.items():
@@ -292,8 +273,8 @@ class WebAdminServer:
                             "status": "未连接",
                         }
 
-                    # 注入延迟信息
-                    latency = ping_results.get(source_name)
+                    # 注入延迟信息（从缓存中读取）
+                    latency = self._latency_cache.get(source_name)
                     conn_info["latency"] = latency  # 单位：毫秒，None表示无法测量
 
                     # 注入子数据源状态
@@ -1265,6 +1246,43 @@ class WebAdminServer:
             logger.debug(f"[灾害预警] Ping {host} 异常: {e}")
             return None
 
+    async def _background_ping_loop(self):
+        """后台定期更新延迟缓存"""
+        logger.info("[灾害预警] 启动后台延迟检测任务")
+        
+        while True:
+            try:
+                # 获取所有预期的数据源
+                expected_sources = self._get_expected_data_sources()
+                
+                # 并发测试所有数据源的延迟
+                ping_tasks = {}
+                for source_name in expected_sources.keys():
+                    host = self._get_data_source_host(source_name)
+                    if host:
+                        ping_tasks[source_name] = self._ping_host(host, timeout=1.0)
+                
+                # 等待所有ping完成
+                if ping_tasks:
+                    results = await asyncio.gather(*ping_tasks.values(), return_exceptions=True)
+                    for source_name, result in zip(ping_tasks.keys(), results):
+                        if isinstance(result, Exception):
+                            self._latency_cache[source_name] = None
+                        else:
+                            self._latency_cache[source_name] = result
+                
+                logger.debug(f"[灾害预警] 延迟缓存已更新: {self._latency_cache}")
+                
+                # 每45秒更新一次
+                await asyncio.sleep(45)
+                
+            except asyncio.CancelledError:
+                logger.info("[灾害预警] 后台延迟检测任务已停止")
+                break
+            except Exception as e:
+                logger.error(f"[灾害预警] 后台延迟检测出错: {e}")
+                await asyncio.sleep(45)
+
     async def start(self):
         """启动 Web 服务器"""
         if not FASTAPI_AVAILABLE:
@@ -1287,9 +1305,20 @@ class WebAdminServer:
 
         # 启动 WebSocket 广播循环
         self._broadcast_task = asyncio.create_task(self._broadcast_loop())
+        
+        # 启动后台延迟检测任务
+        self._ping_task = asyncio.create_task(self._background_ping_loop())
 
     async def stop(self):
         """停止 Web 服务器"""
+        # 停止后台延迟检测任务
+        if self._ping_task:
+            self._ping_task.cancel()
+            try:
+                await self._ping_task
+            except asyncio.CancelledError:
+                pass
+        
         # 停止 WebSocket 广播循环
         if self._broadcast_task:
             self._broadcast_task.cancel()
