@@ -549,70 +549,6 @@ class WebAdminServer:
                 logger.error(f"[灾害预警] 获取热力图数据失败: {e}")
                 return JSONResponse({"error": str(e)}, status_code=500)
 
-        @self.app.post("/api/test-push")
-        async def test_push(
-            target_session: str = None, disaster_type: str = "earthquake"
-        ):
-            """
-            简单测试推送 - 使用预设的测试数据
-            """
-            try:
-                if not self.disaster_service:
-                    return JSONResponse({"error": "服务未初始化"}, status_code=503)
-
-                # 确定目标 session
-                final_target_session = None
-
-                if target_session:
-                    final_target_session = target_session
-                else:
-                    # 使用第一个配置的目标会话
-                    target_sessions = self.config.get("target_sessions", [])
-                    if target_sessions:
-                        final_target_session = target_sessions[0]
-                    else:
-                        return JSONResponse(
-                            {"error": "未配置目标会话"}, status_code=400
-                        )
-
-                # 根据灾害类型选择一个合适的 test_type
-                if disaster_type == "earthquake":
-                    test_type = "cenc_fanstudio"
-                    custom_params = {
-                        "magnitude": 6.8,
-                        "place_name": "模拟-中国台湾花莲县",
-                        "depth": 10,
-                    }
-                elif disaster_type == "tsunami":
-                    test_type = "china_tsunami_fanstudio"
-                    custom_params = {}
-                elif disaster_type == "weather":
-                    test_type = "china_weather_fanstudio"
-                    custom_params = {}
-                else:
-                    return JSONResponse(
-                        {"error": f"不支持的灾害类型: {disaster_type}"},
-                        status_code=400,
-                    )
-
-                # 调用新的 simulate_custom_event
-                result = (
-                    await self.disaster_service.message_manager.simulate_custom_event(
-                        session=final_target_session,
-                        disaster_type=disaster_type,
-                        test_type=test_type,
-                        custom_params=custom_params,
-                    )
-                )
-
-                return {
-                    "success": "✅" in result if result else False,
-                    "message": result,
-                }
-            except Exception as e:
-                logger.error(f"[灾害预警] 测试推送失败: {e}", exc_info=True)
-                return JSONResponse({"error": str(e)}, status_code=500)
-
         @self.app.get("/api/simulation-params")
         async def get_simulation_params():
             """获取模拟预警可用的参数选项"""
@@ -721,13 +657,15 @@ class WebAdminServer:
         @self.app.post("/api/simulate")
         async def simulate_disaster(simulation_data: dict[str, Any]):
             """
-            自定义模拟灾害预警
+            模拟灾害预警（复用命令行版本的过滤器测试逻辑）
+            
+            目前仅支持地震模拟，会执行完整的过滤器测试
 
             支持的参数:
             - target_session: 目标会话UMO (可选，默认使用第一个配置的会话)
-            - disaster_type: 灾害类型 (earthquake/tsunami/weather)
-            - test_type: 测试格式 (china/japan/usgs 等)
-            - custom_params: 自定义参数 (震级、经纬度、深度、地名等)
+            - disaster_type: 灾害类型 (仅支持earthquake)
+            - test_type: 数据源ID
+            - custom_params: 自定义参数 (震级、经纬度、深度等)
             """
             try:
                 if not self.disaster_service:
@@ -736,12 +674,18 @@ class WebAdminServer:
                 # 解析参数
                 target_session = simulation_data.get("target_session", "")
                 disaster_type = simulation_data.get("disaster_type", "earthquake")
-                test_type = simulation_data.get("test_type", "china")
+                test_type = simulation_data.get("test_type", "cea_fanstudio")
                 custom_params = simulation_data.get("custom_params", {})
+
+                # 目前仅支持地震模拟
+                if disaster_type != "earthquake":
+                    return JSONResponse(
+                        {"error": f"暂不支持 {disaster_type} 类型的模拟，仅支持 earthquake"},
+                        status_code=400
+                    )
 
                 # 确定目标 session
                 final_target_session = None
-
                 if target_session:
                     final_target_session = target_session
                 else:
@@ -753,24 +697,129 @@ class WebAdminServer:
                             {"error": "未配置目标会话"}, status_code=400
                         )
 
-                # 调用自定义模拟推送
-                result = (
-                    await self.disaster_service.message_manager.simulate_custom_event(
-                        session=final_target_session,
-                        disaster_type=disaster_type,
-                        test_type=test_type,
-                        custom_params=custom_params,
-                    )
+                # 提取地震参数
+                lat = float(custom_params.get("latitude", 39.9))
+                lon = float(custom_params.get("longitude", 116.4))
+                magnitude = float(custom_params.get("magnitude", 5.5))
+                depth = float(custom_params.get("depth", 10.0))
+                source = custom_params.get("source", test_type)
+
+                # 复用命令行版本的逻辑
+                from ..utils.mappers import get_data_source_from_id, translate_place_name
+                from ..models.models import DisasterEvent, EarthquakeData, DisasterType
+                
+                manager = self.disaster_service.message_manager
+                
+                # 1. 获取数据源
+                data_source = get_data_source_from_id(source)
+                if not data_source:
+                    valid_sources = ", ".join(DATA_SOURCE_MAPPING.keys())
+                    return JSONResponse({
+                        "error": f"无效的数据源: {source}",
+                        "valid_sources": list(DATA_SOURCE_MAPPING.keys())
+                    }, status_code=400)
+
+                # 2. 构造模拟数据
+                final_place_name = translate_place_name("模拟震中", lat, lon)
+                
+                earthquake = EarthquakeData(
+                    id=f"sim_{int(datetime.now().timestamp())}",
+                    event_id=f"sim_{int(datetime.now().timestamp())}",
+                    source=data_source,
+                    disaster_type=DisasterType.EARTHQUAKE,
+                    shock_time=datetime.now(),
+                    latitude=lat,
+                    longitude=lon,
+                    depth=depth,
+                    magnitude=magnitude,
+                    place_name=final_place_name,
+                    source_id=source,
+                    raw_data={"test": True, "source_id": source},
                 )
 
-                return {
-                    "success": "✅" in result if result else False,
-                    "message": result,
-                }
-            except Exception as e:
-                logger.error(f"[灾害预警] 自定义模拟推送失败: {e}")
-                import traceback
+                # 特定数据源处理
+                if source == "usgs_fanstudio":
+                    earthquake.update_time = datetime.now()
+                if source in ["jma_p2p", "jma_wolfx", "jma_p2p_info"]:
+                    earthquake.max_scale = max(0, min(7, int(magnitude - 2)))
+                    earthquake.scale = earthquake.max_scale
 
+                disaster_event = DisasterEvent(
+                    id=f"sim_evt_{int(datetime.now().timestamp())}",
+                    data=earthquake,
+                    source=data_source,
+                    disaster_type=DisasterType.EARTHQUAKE,
+                    source_id=source,
+                )
+
+                # 3. 执行过滤器测试
+                report_lines = [
+                    "🧪 灾害预警模拟报告",
+                    f"Input: M{magnitude} @ ({lat}, {lon}), Depth {depth}km\n",
+                ]
+                
+                global_pass = True
+                local_pass = True
+
+                # 全局过滤器
+                if manager.intensity_filter:
+                    if manager.intensity_filter.should_filter(earthquake):
+                        global_pass = False
+                        report_lines.append("❌ 全局过滤: 拦截 (不满足最小震级/烈度要求)")
+                    else:
+                        report_lines.append("✅ 全局过滤: 通过")
+
+                # 本地监控
+                if manager.local_monitor:
+                    result = manager.local_monitor.inject_local_estimation(earthquake)
+                    if result is None:
+                        report_lines.append("ℹ️ 本地监控: 未启用")
+                    else:
+                        allowed = result.get("is_allowed", True)
+                        dist = result.get("distance")
+                        inte = result.get("intensity")
+
+                        if allowed:
+                            report_lines.append("✅ 本地监控: 触发")
+                        else:
+                            local_pass = False
+                            report_lines.append("❌ 本地监控: 拦截 (严格模式生效中)")
+
+                        report_lines.append(
+                            f"   ⦁ 严格模式: {'开启' if manager.local_monitor.strict_mode else '关闭 (仅计算不拦截)'}"
+                        )
+                        dist_str = f"{dist:.1f} km" if dist is not None else "未知"
+                        inte_str = f"{inte:.1f}" if inte is not None else "未知"
+                        report_lines.extend([
+                            f"   ⦁ 距本地: {dist_str}",
+                            f"   ⦁ 预估最大本地烈度: {inte_str}",
+                            f"   ⦁ 本地烈度阈值: {manager.local_monitor.threshold}",
+                        ])
+                else:
+                    report_lines.append("ℹ️ 本地监控: 未配置")
+
+                # 4. 如果通过过滤器，发送消息
+                if global_pass and local_pass:
+                    logger.info("[灾害预警] 开始构建模拟预警消息...")
+                    msg_chain = await manager.build_message_async(disaster_event)
+                    await manager._send_message(final_target_session, msg_chain)
+                    logger.info(f"[灾害预警] ✅ 模拟事件已成功推送到 {final_target_session}")
+                    report_lines.append(f"\n✅ 消息已发送到: {final_target_session}")
+                    
+                    return {
+                        "success": True,
+                        "message": "\n".join(report_lines),
+                    }
+                else:
+                    report_lines.append("\n⛔ 结论: 该事件不会触发预警推送。")
+                    return {
+                        "success": False,
+                        "message": "\n".join(report_lines),
+                    }
+
+            except Exception as e:
+                logger.error(f"[灾害预警] 模拟推送失败: {e}")
+                import traceback
                 logger.error(traceback.format_exc())
                 return JSONResponse({"error": str(e)}, status_code=500)
 
