@@ -18,8 +18,6 @@ from astrbot.api import logger
 from astrbot.api.event import MessageChain
 from astrbot.api.star import StarTools
 
-from ..utils.map_tile_sources import get_tile_url_js
-
 from ..models.data_source_config import (
     get_eew_sources,
     get_intensity_based_sources,
@@ -31,7 +29,6 @@ from ..models.models import (
     EarthquakeData,
     TsunamiData,
     WeatherAlarmData,
-    DisasterType,
 )
 from ..utils.formatters import (
     CWAReportFormatter,
@@ -40,6 +37,7 @@ from ..utils.formatters import (
     format_tsunami_message,
     format_weather_message,
 )
+from ..utils.map_tile_sources import get_tile_url_js
 from ..utils.version import get_plugin_version
 from .browser_manager import BrowserManager
 from .event_deduplicator import EventDeduplicator
@@ -181,9 +179,9 @@ class MessagePushManager:
         # 则在后台异步预热浏览器，避免第一次推送时因启动浏览器造成延迟
         # 注意：远程模式使用 HTTP API，不需要预热
         msg_config = config.get("message_format", {})
-        if (
-            playwright_mode == "local"
-            and (msg_config.get("include_map", False) or msg_config.get("use_global_quake_card", False))
+        if playwright_mode == "local" and (
+            msg_config.get("include_map", False)
+            or msg_config.get("use_global_quake_card", False)
         ):
             logger.debug("[灾害预警] 检测到已启用卡片渲染功能，正在后台预热浏览器...")
             asyncio.create_task(self.browser_manager.initialize())
@@ -576,7 +574,7 @@ class MessagePushManager:
                 # 注入自定义缩放级别，默认设为 5
                 zoom_level = message_format_config.get("map_zoom_level", 5)
                 context["zoom_level"] = zoom_level
-                
+
                 # 注入地图源配置
                 map_source = message_format_config.get("map_source", "PetalMap矢量图亮")
                 context["map_source"] = map_source
@@ -601,11 +599,17 @@ class MessagePushManager:
                         template_content = f.read()
 
                     # 根据 playwright 模式选择资源 URL
-                    playwright_mode = self.config.get("message_format", {}).get("playwright_mode", "local")
+                    playwright_mode = self.config.get("message_format", {}).get(
+                        "playwright_mode", "local"
+                    )
                     if playwright_mode == "remote":
                         # 远程模式：使用 CDN
-                        context["leaflet_js_url"] = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-                        context["leaflet_css_url"] = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+                        context["leaflet_js_url"] = (
+                            "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+                        )
+                        context["leaflet_css_url"] = (
+                            "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+                        )
                     else:
                         # 本地模式：使用本地文件
                         leaflet_path = os.path.abspath(
@@ -828,7 +832,9 @@ class MessagePushManager:
             )
 
             # 根据 playwright 模式选择资源 URL
-            playwright_mode = self.config.get("message_format", {}).get("playwright_mode", "local")
+            playwright_mode = self.config.get("message_format", {}).get(
+                "playwright_mode", "local"
+            )
             if playwright_mode == "remote":
                 # 远程模式：使用 CDN
                 leaflet_js_url = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"

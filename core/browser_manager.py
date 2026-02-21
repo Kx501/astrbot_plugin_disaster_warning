@@ -5,7 +5,6 @@
 """
 
 import asyncio
-import json
 import os
 import tempfile
 import time
@@ -59,7 +58,9 @@ class BrowserManager:
             try:
                 # 远程模式使用 HTTP API，不需要初始化 Playwright
                 if self._mode == "remote":
-                    logger.info(f"[灾害预警] 远程模式：使用 browserless HTTP API ({self._server_url})")
+                    logger.info(
+                        f"[灾害预警] 远程模式：使用 browserless HTTP API ({self._server_url})"
+                    )
                     self._initialized = True
                     return
 
@@ -124,7 +125,7 @@ class BrowserManager:
             # browserless CDP：必须使用默认 context
             contexts = self._browser.contexts
             logger.debug(f"[灾害预警] 发现 {len(contexts)} 个现有 context")
-            
+
             if contexts:
                 # 使用第一个 context（browserless 的默认 context）
                 self._context = contexts[0]
@@ -139,7 +140,7 @@ class BrowserManager:
                     ),
                     timeout=15.0,
                 )
-            
+
             # 从 context 创建页面
             for i in range(self.pool_size):
                 try:
@@ -158,16 +159,20 @@ class BrowserManager:
                     if i == 0:
                         raise
                     break
-            
+
             # 检查是否至少有一个页面可用
             if self._page_pool.qsize() == 0:
                 raise RuntimeError("无法创建任何可用页面")
-            
-            logger.info(f"[灾害预警] 远程浏览器页面池初始化完成，可用页面: {self._page_pool.qsize()}")
-            
+
+            logger.info(
+                f"[灾害预警] 远程浏览器页面池初始化完成，可用页面: {self._page_pool.qsize()}"
+            )
+
         except asyncio.TimeoutError:
             logger.error("[灾害预警] 远程浏览器页面池初始化超时")
-            raise RuntimeError("远程浏览器页面池初始化超时，请检查网络或增加 browserless 超时设置")
+            raise RuntimeError(
+                "远程浏览器页面池初始化超时，请检查网络或增加 browserless 超时设置"
+            )
         except Exception as e:
             logger.error(f"[灾害预警] 远程浏览器页面池初始化失败: {e}")
             raise
@@ -196,10 +201,8 @@ class BrowserManager:
             if not self._initialized:
                 logger.warning("[灾害预警] 浏览器未初始化，尝试初始化...")
                 await self.initialize()
-            return await self._render_card_via_http(
-                html_content, output_path, selector
-            )
-        
+            return await self._render_card_via_http(html_content, output_path, selector)
+
         # 本地模式：使用 Playwright
         if not self._initialized:
             logger.warning("[灾害预警] 浏览器未初始化，尝试初始化...")
@@ -318,7 +321,7 @@ class BrowserManager:
                     logger.debug("[灾害预警] 已关闭损坏的页面")
                 except Exception:
                     pass
-                
+
                 # 恢复页面池
                 async with self._page_creation_lock:
                     try:
@@ -340,13 +343,13 @@ class BrowserManager:
     ) -> str | None:
         """使用 browserless HTTP API 渲染卡片"""
         start_time = time.time()
-        
+
         # 构建请求 URL
         api_url = self._server_url
         if not api_url.endswith("/"):
             api_url += "/"
         api_url += "screenshot"
-        
+
         try:
             # 构建请求体 - 使用 browserless screenshot API
             payload = {
@@ -367,7 +370,7 @@ class BrowserManager:
                 },
                 "waitForTimeout": 3000,  # 额外等待 3 秒，确保地图瓦片加载
             }
-            
+
             # 如果指定了选择器，使用元素截图
             if selector and selector != ".card":
                 payload["selector"] = selector
@@ -377,7 +380,7 @@ class BrowserManager:
                     "visible": True,
                     "timeout": 10000,
                 }
-            
+
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     api_url,
@@ -389,9 +392,11 @@ class BrowserManager:
                         image_data = await response.read()
                         with open(output_path, "wb") as f:
                             f.write(image_data)
-                        
+
                         elapsed = time.time() - start_time
-                        logger.info(f"[灾害预警] 卡片渲染成功（HTTP API），耗时 {elapsed:.3f}秒")
+                        logger.info(
+                            f"[灾害预警] 卡片渲染成功（HTTP API），耗时 {elapsed:.3f}秒"
+                        )
                         return output_path
                     else:
                         error_text = await response.text()
@@ -399,7 +404,7 @@ class BrowserManager:
                             f"[灾害预警] browserless API 返回错误: {response.status} - {error_text}"
                         )
                         return None
-                        
+
         except asyncio.TimeoutError:
             logger.error("[灾害预警] browserless API 请求超时")
             return None
