@@ -161,7 +161,7 @@ function HorizontalTimeline({ style }) {
     };
 
     return (
-        <div className="card" style={{ ...style, display: 'flex', flexDirection: 'column', overflowX: 'auto' }}>
+        <div className="card" style={{ ...style, display: 'flex', flexDirection: 'column', overflowX: 'auto', position: 'relative' }}>
             <div className="chart-card-header" style={{ marginBottom: '24px' }}>
                 <span style={{ fontSize: '20px' }}>⏳</span>
                 <Typography variant="h6">重大事件回溯</Typography>
