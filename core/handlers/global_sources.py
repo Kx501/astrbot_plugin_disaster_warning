@@ -108,7 +108,7 @@ class GlobalQuakeHandler(BaseDataHandler):
 
             # 格式化震级和深度
             magnitude = round(eq_data.magnitude, 1) if eq_data.magnitude else None
-            depth = round(eq_data.depth, 1) if eq_data.depth else None
+            depth = round(eq_data.depth, 1) if eq_data.depth is not None else None
 
             # 翻译地名
             place_name = translate_place_name(
