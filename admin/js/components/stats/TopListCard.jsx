@@ -16,7 +16,7 @@ function TopListCard({ title, icon, data, color, style }) {
     }
     
     // 计算最大值，用于比例条
-    const maxCount = Math.max(...data.slice(0, 10).map(d => d.count));
+    const maxCount = Math.max(1, ...data.slice(0, 10).map(d => d.count));
 
     return (
         <div className="card" style={{ height: '100%', minHeight: '200px', ...style }}>

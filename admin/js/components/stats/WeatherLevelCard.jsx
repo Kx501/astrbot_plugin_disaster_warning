@@ -22,11 +22,12 @@ function WeatherLevelCard({ style }) {
 
     // 颜色映射
     const getColor = (level) => {
-        if (level.includes('红')) return '#F94543';
-        if (level.includes('橙')) return '#FF7639';
-        if (level.includes('黄')) return '#FCD952';
-        if (level.includes('蓝')) return '#1982C1';
-        if (level.includes('白')) return '#e5e7eb'; // 白色预警，使用浅灰色
+        const text = String(level || '');
+        if (text.includes('红')) return '#F94543';
+        if (text.includes('橙')) return '#FF7639';
+        if (text.includes('黄')) return '#FCD952';
+        if (text.includes('蓝')) return '#1982C1';
+        if (text.includes('白')) return '#e5e7eb'; // 白色预警，使用浅灰色
         return '#9ca3af';
     };
 
