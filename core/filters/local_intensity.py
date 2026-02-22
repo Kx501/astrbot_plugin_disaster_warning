@@ -49,7 +49,7 @@ class LocalIntensityFilter:
         intensity = IntensityCalculator.calculate_estimated_intensity(
             earthquake.magnitude or 0.0,
             distance,
-            earthquake.depth or 10.0,
+            earthquake.depth if earthquake.depth is not None else 10.0,
             event_longitude=earthquake.longitude,  # 传入经度以区分东西部
         )
 

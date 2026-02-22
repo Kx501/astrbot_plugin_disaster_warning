@@ -15,7 +15,7 @@ from ...models.models import (
     DisasterType,
     EarthquakeData,
 )
-from ...models.websocket_message_pb2 import WsMessage, MessageType
+from ...models.websocket_message_pb2 import MessageType, WsMessage
 from ...utils.converters import ScaleConverter, safe_float_convert
 from ...utils.fe_regions import translate_place_name
 from .base import BaseDataHandler
@@ -49,9 +49,7 @@ class GlobalQuakeHandler(BaseDataHandler):
 
             # 检查消息类型
             if ws_msg.type == MessageType.EARTHQUAKE:
-                logger.debug(
-                    f"[灾害预警] {self.source_id} 收到地震消息 (Protobuf)"
-                )
+                logger.debug(f"[灾害预警] {self.source_id} 收到地震消息")
                 return self._parse_earthquake_protobuf(ws_msg)
             elif ws_msg.type == MessageType.HEARTBEAT:
                 logger.debug(f"[灾害预警] {self.source_id} 心跳消息")
@@ -110,11 +108,14 @@ class GlobalQuakeHandler(BaseDataHandler):
 
             # 格式化震级和深度
             magnitude = round(eq_data.magnitude, 1) if eq_data.magnitude else None
-            depth = round(eq_data.depth, 1) if eq_data.depth else None
+            depth = round(eq_data.depth, 1) if eq_data.depth is not None else None
 
             # 翻译地名
             place_name = translate_place_name(
-                eq_data.region, eq_data.latitude, eq_data.longitude, fallback_to_original=True
+                eq_data.region,
+                eq_data.latitude,
+                eq_data.longitude,
+                fallback_to_original=True,
             )
 
             # 提取台站信息
@@ -143,9 +144,7 @@ class GlobalQuakeHandler(BaseDataHandler):
             raw_data = {
                 "protobuf": True,
                 "id": eq_data.id,
-                "data": {
-                    "quality": quality_data
-                } if quality_data else {}
+                "data": {"quality": quality_data} if quality_data else {},
             }
 
             # 创建地震数据对象

@@ -191,7 +191,9 @@ class WebSocketManager:
                                         f"[灾害预警] 未找到消息处理器 - 连接: {name}"
                                     )
                             except Exception as e:
-                                logger.error(f"[灾害预警] 二进制消息处理错误 {name}: {e}")
+                                logger.error(
+                                    f"[灾害预警] 二进制消息处理错误 {name}: {e}"
+                                )
                                 logger.debug(
                                     f"[灾害预警] 异常堆栈: {traceback.format_exc()}"
                                 )
@@ -331,10 +333,18 @@ class WebSocketManager:
         if not self.running:
             return
 
-        # 检查是否应该重连
-        if not self._should_reconnect_on_error(error):
-            logger.warning(f"[灾害预警] {name} 遇到不可恢复错误，停止重连")
+        # 检查是否是致命错误（SSL等配置错误），这种情况下停止重连
+        error_msg = str(error).lower()
+        if "ssl" in error_msg or "certificate" in error_msg:
+            logger.warning(f"[灾害预警] {name} 遇到SSL配置错误，停止重连: {error}")
             return
+
+        # 检查是否是关键错误（认证、协议错误等），这种情况下直接进入兜底重连
+        force_fallback = self._is_critical_error(error)
+        if force_fallback:
+            logger.warning(
+                f"[灾害预警] {name} 遇到关键错误，将直接进入兜底重连阶段: {error}"
+            )
 
         # 避免同一连接并发创建多个重连任务
         existing_task = self.reconnect_tasks.get(name)
@@ -343,36 +353,33 @@ class WebSocketManager:
             return
 
         reconnect_task = asyncio.create_task(
-            self._schedule_reconnect(name, uri, headers, connection_info),
+            self._schedule_reconnect(
+                name, uri, headers, connection_info, force_fallback=force_fallback
+            ),
             name=f"dw_reconnect_{name}",
         )
         self.reconnect_tasks[name] = reconnect_task
 
-    def _should_reconnect_on_error(self, error: Exception) -> bool:
-        """判断遇到错误时是否应该重连
+    def _is_critical_error(self, error: Exception) -> bool:
+        """判断是否为关键错误（需要直接进入兜底重连）
 
         Args:
             error: 捕获到的异常对象
 
         Returns:
-            bool: True 表示应该重连，False 表示不应重连
+            bool: True 表示是关键错误，应跳过短时重连直接兜底
         """
         error_msg = str(error).lower()
 
-        # SSL错误通常不需要重试（配置问题）
-        if "ssl" in error_msg or "certificate" in error_msg:
-            return False
-
-        # 认证错误不需要重试
+        # 认证错误
         if "401" in error_msg or "403" in error_msg:
-            return False
+            return True
 
-        # 协议错误关闭代码不应重连（由关闭代码处理逻辑抛出）
+        # 协议错误关闭代码
         if "协议错误关闭（不重连）" in error_msg:
-            return False
+            return True
 
-        # 其他大部分网络错误都值得重试
-        return True
+        return False
 
     def _get_handler_name_for_connection(self, connection_name: str) -> str:
         """获取连接对应的处理器名称"""
@@ -403,6 +410,7 @@ class WebSocketManager:
         uri: str,
         headers: dict | None = None,
         connection_info: dict[str, Any] | None = None,
+        force_fallback: bool = False,
     ):
         """计划重连 - 优化版本，基于配置的固定间隔
 
@@ -411,6 +419,7 @@ class WebSocketManager:
             uri: WebSocket URI
             headers: 可选的HTTP头
             connection_info: 从 _handle_connection_error 传递的连接元数据
+            force_fallback: 是否强制进入兜底重试阶段
         """
         if not self.running:
             return
@@ -438,6 +447,12 @@ class WebSocketManager:
             # 使用传入的 connection_info 检查 backup_url，因为 self.connection_info 已被清理
             has_backup = connection_info and connection_info.get("backup_url")
             total_max_retries = max_retries * 2 if has_backup else max_retries
+
+            # 如果强制兜底，将当前重试次数设置为最大值，以触发兜底逻辑
+            if force_fallback:
+                current_retry = total_max_retries
+                # 更新计数器，确保后续逻辑一致
+                self.connection_retry_counts[name] = total_max_retries
 
             if current_retry >= total_max_retries:
                 # 短时重连次数用尽，检查是否启用兜底重试
@@ -481,9 +496,17 @@ class WebSocketManager:
                 if not self.running:
                     return
 
-                # 重置短时重连计数器，重新开始短时重连流程
-                self.connection_retry_counts[name] = 0
-                logger.info(f"[灾害预警] {name} 开始兜底重试，重置短时重连计数器")
+                # 关键修改：在兜底重试时，不重置短时重连计数器
+                # 这样如果这次连接失败，下次会继续进入兜底逻辑，而不是重新开始短时重连
+                # self.connection_retry_counts[name] = 0  <-- 已移除
+
+                logger.info(f"[灾害预警] {name} 开始兜底重试连接...")
+
+                # 关键修复：在发起连接前，先清理当前任务记录
+                # 这样如果 connect 失败并触发 _handle_connection_error，
+                # 它能检测到当前没有任务在运行，从而创建新的重连任务
+                self.reconnect_tasks.pop(name, None)
+
                 await self.connect(
                     name,
                     uri,
@@ -520,6 +543,10 @@ class WebSocketManager:
 
             # 标记为重试连接
             # 必须将 connection_info 传回去，否则下次重试时配置会丢失
+
+            # 关键修复：在发起连接前，先清理当前任务记录
+            self.reconnect_tasks.pop(name, None)
+
             await self.connect(
                 name,
                 target_uri,
@@ -533,6 +560,7 @@ class WebSocketManager:
         except Exception as e:
             logger.error(f"[灾害预警] WebSocket管理器重连执行失败 {name}: {e}")
         finally:
+            # 双重保险：如果任务还在字典里（比如 sleep 期间被取消），清理它
             current_task = self.reconnect_tasks.get(name)
             if current_task is asyncio.current_task():
                 self.reconnect_tasks.pop(name, None)
