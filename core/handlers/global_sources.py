@@ -49,7 +49,7 @@ class GlobalQuakeHandler(BaseDataHandler):
 
             # 检查消息类型
             if ws_msg.type == MessageType.EARTHQUAKE:
-                logger.debug(f"[灾害预警] {self.source_id} 收到地震消息 (Protobuf)")
+                logger.debug(f"[灾害预警] {self.source_id} 收到地震消息")
                 return self._parse_earthquake_protobuf(ws_msg)
             elif ws_msg.type == MessageType.HEARTBEAT:
                 logger.debug(f"[灾害预警] {self.source_id} 心跳消息")
