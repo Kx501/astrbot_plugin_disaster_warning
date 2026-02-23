@@ -14,6 +14,7 @@ from ..models.models import (
     TsunamiData,
     WeatherAlarmData,
 )
+from ..utils.converters import is_major_event
 from ..utils.formatters.weather import COLOR_LEVEL_EMOJI, SORTED_WEATHER_TYPES
 from ..utils.time_converter import TimeConverter
 from .database_manager import DatabaseManager
@@ -163,23 +164,6 @@ class StatisticsManager:
             if "红" in level or "橙" in level:
                 return True
             if "红" in headline or "橙" in headline:
-                return True
-        return False
-
-    def _is_major_event_from_dict(self, record: dict) -> bool:
-        """从序列化的事件字典判断是否为重大事件（用于数据迁移）"""
-        event_type = record.get("type", "")
-        if event_type in ("earthquake", "earthquake_warning"):
-            magnitude = record.get("magnitude")
-            return magnitude is not None and magnitude >= 5.0
-        elif event_type == "tsunami":
-            return True
-        elif event_type == "weather_alarm":
-            level = record.get("level") or ""
-            description = record.get("description") or ""
-            if "红" in level or "橙" in level:
-                return True
-            if "红" in description or "橙" in description:
                 return True
         return False
 
@@ -704,7 +688,7 @@ class StatisticsManager:
             for record in recent_pushes:
                 try:
                     # 补充 is_major 标记（迁移旧数据时重新判断）
-                    record["is_major"] = self._is_major_event_from_dict(record)
+                    record["is_major"] = is_major_event(record)
                     await self.db.insert_event(record)
                     migrated += 1
                 except Exception as e:

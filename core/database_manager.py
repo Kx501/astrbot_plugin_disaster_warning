@@ -16,6 +16,8 @@ import aiosqlite
 
 from astrbot.api import logger
 
+from ..utils.converters import is_major_event
+
 
 class DatabaseManager:
     """数据库管理器"""
@@ -151,7 +153,7 @@ class DatabaseManager:
                             except (json.JSONDecodeError, TypeError):
                                 pass
 
-                        is_major = self._calc_is_major(row)
+                        is_major = is_major_event(row)
 
                         await cursor.execute(
                             """
@@ -246,20 +248,6 @@ class DatabaseManager:
                 logger.error(f"[灾害预警] 回滚失败: {re}")
             raise
 
-    def _calc_is_major(self, record: dict) -> bool:
-        """从事件 dict 判断是否为重大事件"""
-        t = record.get("type", "")
-        if t in ("earthquake", "earthquake_warning"):
-            mag = record.get("magnitude")
-            return mag is not None and mag >= 5.0
-        if t == "tsunami":
-            return True
-        if t == "weather_alarm":
-            level = record.get("level") or ""
-            desc = record.get("description") or ""
-            return any(kw in s for kw in ("红", "橙") for s in (level, desc))
-        return False
-
     # ──────────────────────────── 写操作 ────────────────────────────
 
     async def insert_event(self, event_data: dict[str, Any]) -> int:
@@ -269,7 +257,7 @@ class DatabaseManager:
         """
         try:
             cursor = await self.connection.cursor()
-            is_major = bool(event_data.get("is_major")) or self._calc_is_major(event_data)
+            is_major = bool(event_data.get("is_major")) or is_major_event(event_data)
 
             await cursor.execute(
                 """
@@ -334,7 +322,7 @@ class DatabaseManager:
             cursor = await self.connection.cursor()
             real_event_id = event_data.get("real_event_id")
             unique_id = event_data.get("unique_id")
-            is_major = bool(event_data.get("is_major")) or self._calc_is_major(event_data)
+            is_major = bool(event_data.get("is_major")) or is_major_event(event_data)
 
             # 查找 events.id
             db_id = None

@@ -22,7 +22,17 @@ function EventsList() {
     const [loading, setLoading] = useState(false);
     const LIMIT = 50;
 
+    // 持有当前进行中请求的 AbortController，新请求发起时 abort 旧请求
+    const abortControllerRef = useRef(null);
+
     const fetchEvents = useCallback((page, type) => {
+        // 取消上一个尚未完成的请求
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         setLoading(true);
         const typeParam = type === 'all' ? '' : type;
         // 将前端 filter key 映射为后端的 type 值
@@ -33,7 +43,7 @@ function EventsList() {
             'weather': 'weather_alarm',
         };
         const apiType = typeMap[type] || typeParam;
-        fetch(`/api/events?page=${page}&limit=${LIMIT}${apiType ? `&type=${apiType}` : ''}`)
+        fetch(`/api/events?page=${page}&limit=${LIMIT}${apiType ? `&type=${apiType}` : ''}`, { signal: controller.signal })
             .then(res => res.json())
             .then(data => {
                 setEvents(Array.isArray(data.events) ? data.events : []);
@@ -42,6 +52,7 @@ function EventsList() {
                 setLoading(false);
             })
             .catch(err => {
+                if (err.name === 'AbortError') return;
                 console.error('Failed to fetch events:', err);
                 setLoading(false);
             });
