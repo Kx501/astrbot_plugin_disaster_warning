@@ -23,6 +23,12 @@ class DatabaseManager:
     """数据库管理器"""
 
     def __init__(self, db_path: Path):
+        """
+        初始化数据库管理器
+
+        Args:
+            db_path: 数据库文件路径
+        """
         self.db_path = db_path
         self.connection: aiosqlite.Connection | None = None
 
@@ -564,14 +570,17 @@ class DatabaseManager:
     # ──────────────────────────── 生命周期 ────────────────────────────
 
     async def close(self):
+        """关闭数据库连接"""
         if self.connection:
             await self.connection.close()
             self.connection = None
             logger.info("[灾害预警] 数据库连接已关闭")
 
     async def __aenter__(self):
+        """异步上下文管理器入口"""
         await self.initialize()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """异步上下文管理器退出"""
         await self.close()
