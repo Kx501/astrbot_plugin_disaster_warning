@@ -26,17 +26,42 @@ jobs:
       - name: 运行屎山分析 & 详细评分
         id: analyze
         run: |
+          # 注意：有管道时需要检查 PIPESTATUS[0]，否则 analyze 失败会被 tee 掩盖成“成功”
           ./fuck-u-code analyze . --verbose --locale zh --top 10 -f json -o analysis.json 2>&1 | tee analysis.log
+          ANALYZE_EXIT=${PIPESTATUS[0]}
+
+          # 兼容旧版本参数（部分版本仍使用 --lang）
+          if [ "$ANALYZE_EXIT" -ne 0 ]; then
+            echo "::warning::analyze(--locale zh) 失败，尝试兼容参数 --lang zh-CN"
+            ./fuck-u-code analyze . --verbose --lang zh-CN --top 10 -f json -o analysis.json 2>&1 | tee analysis.log
+            ANALYZE_EXIT=${PIPESTATUS[0]}
+          fi
+
+          if [ "$ANALYZE_EXIT" -ne 0 ]; then
+            echo "::error::fuck-u-code analyze 执行失败，请检查 analysis.log"
+            exit "$ANALYZE_EXIT"
+          fi
 
           # 优先使用结构化 JSON 字段，避免终端文本格式变化导致解析失败
-          SCORE=$(grep -oP '"overallScore"\s*:\s*\K[0-9.]+' analysis.json | head -1)
+          SCORE=""
+          if [ -f analysis.json ]; then
+            SCORE=$(grep -oP '"overallScore"\s*:\s*\K[0-9.]+' analysis.json | head -1)
+          fi
+
           if [ -z "$SCORE" ]; then
-            SCORE=$(grep -oP '总体评分[:：]\s*\K[0-9.]+' analysis.log | head -1)
+            SCORE=$(grep -oP '"overallScore"\s*:\s*\K[0-9.]+' analysis.log | head -1)
           fi
           if [ -z "$SCORE" ]; then
-            SCORE=$(grep -oP 'Overall\s*Score[:：]\s*\K[0-9.]+' analysis.log | head -1)
+            SCORE=$(grep -oP '总体(质量)?评分[:：]\s*\K[0-9.]+' analysis.log | head -1)
           fi
-          if [ -z "$SCORE" ]; then SCORE="0"; fi
+          if [ -z "$SCORE" ]; then
+            SCORE=$(grep -oP '(Overall|Issue)\s*Score[:：]\s*\K[0-9.]+' analysis.log | head -1)
+          fi
+
+          if [ -z "$SCORE" ]; then
+            echo "::error::未能从 analysis.json / analysis.log 解析出分数，拒绝回退为 0 以避免误报"
+            exit 1
+          fi
 
           echo "原始分数: $SCORE"
           
