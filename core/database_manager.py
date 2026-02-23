@@ -127,7 +127,9 @@ class DatabaseManager:
             # 1. 备份旧表，创建新表（先做结构变更，再分批写数据）
             await cursor.execute("SELECT COUNT(*) FROM events")
             total = (await cursor.fetchone())[0]
-            logger.info(f"[灾害预警] 开始迁移 {total} 条旧记录（每批 {BATCH_SIZE} 条）...")
+            logger.info(
+                f"[灾害预警] 开始迁移 {total} 条旧记录（每批 {BATCH_SIZE} 条）..."
+            )
 
             await cursor.execute("DROP TABLE IF EXISTS events_v1_backup")
             await cursor.execute("ALTER TABLE events RENAME TO events_v1_backup")
@@ -188,7 +190,10 @@ class DatabaseManager:
                                 1 if is_major else 0,
                                 row.get("update_count", 1),
                                 row.get("created_at", datetime.now().isoformat()),
-                                row.get("updated_at", row.get("timestamp", datetime.now().isoformat())),
+                                row.get(
+                                    "updated_at",
+                                    row.get("timestamp", datetime.now().isoformat()),
+                                ),
                             ),
                         )
                         new_event_db_id = cursor.lastrowid
@@ -231,14 +236,20 @@ class DatabaseManager:
                         )
                         migrated += 1
                     except Exception as e:
-                        logger.warning(f"[灾害预警] 迁移单条记录失败 (id={row.get('id')}): {e}")
+                        logger.warning(
+                            f"[灾害预警] 迁移单条记录失败 (id={row.get('id')}): {e}"
+                        )
 
                 # 每批提交一次，降低峰值内存并支持失败重试
                 await self.connection.commit()
                 last_id = batch[-1]["id"]
-                logger.info(f"[灾害预警] 迁移进度：{migrated}/{total}（id > {last_id}）")
+                logger.info(
+                    f"[灾害预警] 迁移进度：{migrated}/{total}（id > {last_id}）"
+                )
 
-            logger.info(f"[灾害预警] 数据库迁移完成：成功迁移 {migrated}/{total} 条记录")
+            logger.info(
+                f"[灾害预警] 数据库迁移完成：成功迁移 {migrated}/{total} 条记录"
+            )
             # events_v1_backup 保留作为安全备份，不立即删除
 
         except Exception as e:
