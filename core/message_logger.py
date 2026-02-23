@@ -7,6 +7,7 @@ import asyncio
 import hashlib
 import json
 import re
+import string
 import threading
 import time
 import traceback
@@ -17,6 +18,7 @@ from typing import Any
 from astrbot.api import logger
 from astrbot.api.star import StarTools
 
+from ..models.websocket_message_pb2 import MessageAction, MessageType, WsMessage
 from ..utils.version import get_plugin_version
 
 
@@ -189,6 +191,17 @@ class MessageLogger:
                             return "内层重复事件"
                     except (json.JSONDecodeError, AttributeError):
                         pass
+
+            elif isinstance(raw_data, (bytes, bytearray, memoryview)):
+                # 二进制消息先尝试解析为结构化数据，再复用既有过滤逻辑
+                parsed_binary = self._try_parse_binary_message(
+                    raw_data,
+                    source=source_id,
+                    message_type="websocket_message",
+                    connection_info={"connection_type": "websocket"},
+                )
+                if isinstance(parsed_binary, dict):
+                    return self._should_filter_message(parsed_binary, source_id)
 
             elif isinstance(raw_data, dict):
                 # 如果raw_data已经是字典
@@ -592,11 +605,32 @@ class MessageLogger:
                     parsed_data = json.loads(raw_data)
                     log_content += self._format_json_data(parsed_data, indent=2)
                 except json.JSONDecodeError:
-                    # 如果不是JSON，直接显示
-                    log_content += f"  {raw_data}\n"
+                    # 兼容历史占位符格式: <binary:291 bytes>
+                    binary_match = re.match(
+                        r"^<binary:(\d+)\s+bytes>$", raw_data.strip()
+                    )
+                    if binary_match:
+                        log_content += "  📋 二进制消息摘要:\n"
+                        log_content += f"    📋 字节长度: {binary_match.group(1)} (历史占位符，原始二进制不可用)\n"
+                    else:
+                        # 如果不是JSON，直接显示
+                        log_content += f"  {raw_data}\n"
             elif isinstance(raw_data, dict):
                 # 已经是字典格式
                 log_content += self._format_json_data(raw_data, indent=2)
+            elif isinstance(raw_data, (bytes, bytearray, memoryview)):
+                # 尝试将二进制消息解析为结构化数据（如 GlobalQuake protobuf）
+                parsed_binary = self._try_parse_binary_message(
+                    raw_data,
+                    source=source,
+                    message_type=message_type,
+                    connection_info=connection_info,
+                )
+                if isinstance(parsed_binary, dict):
+                    log_content += self._format_json_data(parsed_binary, indent=2)
+                else:
+                    # 解析失败时回退到二进制摘要
+                    log_content += self._format_binary_data(raw_data, indent=2)
             else:
                 # 其他格式
                 log_content += f"  {str(raw_data)}\n"
@@ -613,6 +647,175 @@ class MessageLogger:
             # 如果格式化失败，回退到简单的JSON格式
             logger.warning(f"[灾害预警] 日志格式化失败，使用回退格式: {e}")
             return json.dumps(log_entry, ensure_ascii=False, indent=2) + "\n\n"
+
+    def _format_binary_data(
+        self, data: bytes | bytearray | memoryview, indent: int = 0
+    ) -> str:
+        """格式化二进制数据摘要，提供可读性信息而不写入完整原始内容"""
+        result = ""
+        indent_str = "  " * indent
+
+        # 统一为 bytes，避免重复处理不同二进制容器
+        binary_data = bytes(data)
+
+        # 基础信息
+        result += f"{indent_str}📋 数据类型: binary\n"
+        result += f"{indent_str}📋 字节长度: {len(binary_data)}\n"
+
+        # 哈希信息（便于排查重复包与来源一致性）
+        md5_digest = hashlib.md5(binary_data).hexdigest()
+        sha256_digest = hashlib.sha256(binary_data).hexdigest()
+        result += f"{indent_str}📋 MD5: {md5_digest}\n"
+        result += f"{indent_str}📋 SHA256: {sha256_digest}\n"
+
+        # 十六进制预览（默认前32字节，避免日志膨胀）
+        preview_len = 32
+        hex_preview = binary_data[:preview_len].hex(" ")
+        result += f"{indent_str}📋 十六进制预览(前{min(len(binary_data), preview_len)}字节): {hex_preview}\n"
+
+        # ASCII 可读预览（不可打印字符替换为 .）
+        ascii_preview_len = 64
+        preview_chunk = binary_data[:ascii_preview_len]
+        printable_chars = set(string.printable) - {"\x0b", "\x0c"}
+        ascii_preview = "".join(
+            chr(b) if chr(b) in printable_chars and b >= 32 else "."
+            for b in preview_chunk
+        )
+        result += f"{indent_str}📋 ASCII预览(前{min(len(binary_data), ascii_preview_len)}字节): {ascii_preview}\n"
+
+        return result
+
+    def _format_binary_timestamp(self, timestamp_ms: int) -> str:
+        """格式化二进制消息中的毫秒时间戳"""
+        if timestamp_ms <= 0:
+            return "无数据"
+
+        try:
+            dt = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+            return dt.isoformat().replace("+00:00", "Z")
+        except (ValueError, OSError, OverflowError):
+            return str(timestamp_ms)
+
+    def _parse_global_quake_protobuf(self, binary_data: bytes) -> dict[str, Any] | None:
+        """解析 GlobalQuake protobuf 二进制数据为可读字典"""
+        ws_msg = WsMessage()
+        ws_msg.ParseFromString(binary_data)
+
+        type_mapping = {
+            MessageType.EARTHQUAKE: "earthquake",
+            MessageType.STATUS: "status",
+            MessageType.HEARTBEAT: "heartbeat",
+        }
+        action_mapping = {
+            MessageAction.UPDATE: "update",
+            MessageAction.CONNECTED: "connected",
+            MessageAction.DISCONNECTED: "disconnected",
+            MessageAction.PING: "ping",
+            MessageAction.PONG: "pong",
+        }
+
+        msg_type = type_mapping.get(ws_msg.type, "unknown")
+        action = action_mapping.get(ws_msg.action, "unspecified")
+
+        parsed: dict[str, Any] = {
+            "type": msg_type,
+            "action": action,
+            "timestamp": self._format_binary_timestamp(ws_msg.timestamp_ms),
+            "protobuf": True,
+        }
+
+        if ws_msg.type == MessageType.EARTHQUAKE:
+            eq = ws_msg.earthquake_data
+            data: dict[str, Any] = {
+                "id": eq.id,
+                "latitude": eq.latitude,
+                "longitude": eq.longitude,
+                "depth": eq.depth,
+                "magnitude": eq.magnitude,
+                "originTimeMs": eq.origin_time_ms,
+                "originTimeIso": eq.origin_time_iso,
+                "lastUpdateMs": eq.last_update_ms,
+                "revisionId": eq.revision_id,
+                "region": eq.region,
+                "fixedDepth": eq.fixed_depth,
+                "maxPGA": eq.max_pga,
+                "intensity": eq.intensity,
+            }
+
+            if eq.HasField("cluster"):
+                data["cluster"] = {
+                    "id": eq.cluster.id,
+                    "latitude": eq.cluster.latitude,
+                    "longitude": eq.cluster.longitude,
+                    "level": eq.cluster.level,
+                }
+
+            if eq.HasField("quality"):
+                data["quality"] = {
+                    "errOrigin": eq.quality.err_origin,
+                    "errDepth": eq.quality.err_depth,
+                    "errNS": eq.quality.err_ns,
+                    "errEW": eq.quality.err_ew,
+                    "pct": eq.quality.pct,
+                    "stations": eq.quality.stations,
+                }
+
+            if eq.HasField("station_count"):
+                data["stationCount"] = {
+                    "total": eq.station_count.total,
+                    "selected": eq.station_count.selected,
+                    "used": eq.station_count.used,
+                    "matching": eq.station_count.matching,
+                }
+
+            if eq.HasField("depth_confidence"):
+                data["depthConfidence"] = {
+                    "minDepth": eq.depth_confidence.min_depth,
+                    "maxDepth": eq.depth_confidence.max_depth,
+                }
+
+            parsed["data"] = data
+
+        elif ws_msg.type == MessageType.STATUS:
+            parsed["data"] = {
+                "status": ws_msg.status_data.server_status,
+            }
+        elif ws_msg.type == MessageType.HEARTBEAT:
+            parsed["data"] = {
+                "serverTime": self._format_binary_timestamp(
+                    ws_msg.heartbeat_data.server_time
+                ),
+            }
+        else:
+            # 未知类型，不强行展示为业务字段
+            return None
+
+        return parsed
+
+    def _try_parse_binary_message(
+        self,
+        data: bytes | bytearray | memoryview,
+        source: str,
+        message_type: str,
+        connection_info: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """尝试解析二进制消息（目前支持 GlobalQuake protobuf）"""
+        binary_data = bytes(data)
+
+        # 优先限制在 websocket 消息场景，避免对其他二进制载荷误判
+        conn_type = (connection_info or {}).get("connection_type", "")
+        if message_type != "websocket_message" and conn_type != "websocket":
+            return None
+
+        # GlobalQuake 连接优先解析 protobuf
+        if "global_quake" not in source.lower():
+            return None
+
+        try:
+            return self._parse_global_quake_protobuf(binary_data)
+        except Exception as e:
+            logger.debug(f"[灾害预警] 二进制消息解析失败，回退为摘要模式: {e}")
+            return None
 
     def _format_json_data(self, data: dict[str, Any], indent: int = 0) -> str:
         """递归格式化JSON数据，增加可读性"""
@@ -1102,7 +1305,7 @@ class MessageLogger:
                 self.enabled = False
 
     def log_websocket_message(
-        self, connection_name: str, message: str, url: str | None = None
+        self, connection_name: str, message: Any, url: str | None = None
     ):
         """记录WebSocket消息"""
         self.log_raw_message(
