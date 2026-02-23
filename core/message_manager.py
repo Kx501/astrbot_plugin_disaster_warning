@@ -623,7 +623,9 @@ class MessagePushManager:
 
                     # 共享渲染 helper 统一以内联脚本注入，避免远程模式下的静态资源可达性问题
                     map_helper_path = os.path.abspath(
-                        os.path.join(resources_dir, "card_templates", "map_render_helper.js")
+                        os.path.join(
+                            resources_dir, "card_templates", "map_render_helper.js"
+                        )
                     )
                     with open(map_helper_path, encoding="utf-8") as helper_file:
                         context["map_render_helper_js"] = helper_file.read()
