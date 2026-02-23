@@ -403,12 +403,16 @@ class DatabaseManager:
         """为事件列表批量附加 event_updates（重建 history 数组）"""
         if not events:
             return events
-        ids = [e["id"] for e in events]
-        placeholders = ",".join("?" * len(ids))
+        # 用 json_each(?) 传递 ID 列表，避免动态拼接 IN 子句
+        ids = json.dumps([e["id"] for e in events])
         cursor = await self.connection.cursor()
         await cursor.execute(
-            f"SELECT * FROM event_updates WHERE event_id IN ({placeholders}) ORDER BY event_id, recorded_at ASC",
-            ids,
+            """
+            SELECT * FROM event_updates
+            WHERE event_id IN (SELECT value FROM json_each(?))
+            ORDER BY event_id, recorded_at ASC
+            """,
+            (ids,),
         )
         rows = await cursor.fetchall()
 
