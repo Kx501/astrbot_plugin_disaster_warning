@@ -14,6 +14,7 @@ from ..models.models import (
     TsunamiData,
     WeatherAlarmData,
 )
+from ..utils.converters import is_major_event
 from ..utils.formatters.weather import COLOR_LEVEL_EMOJI, SORTED_WEATHER_TYPES
 from ..utils.time_converter import TimeConverter
 from .database_manager import DatabaseManager
@@ -138,6 +139,7 @@ class StatisticsManager:
                     event_unique_id,
                     current_time,
                     max_len=50,
+                    is_major=True,
                 )
 
             # 自动保存
@@ -173,6 +175,7 @@ class StatisticsManager:
         event_unique_id: str,
         current_time: str,
         max_len: int = 100,
+        is_major: bool = False,
     ):
         """更新推送列表 (支持合并更新)"""
         is_merged = False
@@ -247,9 +250,9 @@ class StatisticsManager:
 
                             # 同步更新数据库
                             try:
-                                await self.db.update_event(
-                                    event.id, source_id, updated_record
-                                )
+                                if is_major:
+                                    updated_record["is_major"] = True
+                                await self.db.update_event(source_id, updated_record)
                             except Exception as e:
                                 logger.error(f"[灾害预警] 更新数据库事件失败: {e}")
 
@@ -304,6 +307,8 @@ class StatisticsManager:
 
             # 同步保存到数据库
             try:
+                if is_major:
+                    push_record["is_major"] = True
                 await self.db.insert_event(push_record)
             except Exception as e:
                 logger.debug(f"[灾害预警] 保存到数据库失败（可能已存在）: {e}")
@@ -682,6 +687,8 @@ class StatisticsManager:
             # 尝试插入所有记录
             for record in recent_pushes:
                 try:
+                    # 补充 is_major 标记（迁移旧数据时重新判断）
+                    record["is_major"] = is_major_event(record)
                     await self.db.insert_event(record)
                     migrated += 1
                 except Exception as e:

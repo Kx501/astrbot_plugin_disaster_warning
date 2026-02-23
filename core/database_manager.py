@@ -1,6 +1,10 @@
 """
 灾害预警插件 - 数据库管理模块
 使用 SQLite 存储历史事件数据（异步版本，使用 aiosqlite）
+
+Schema v2：
+  events        - 每个物理事件一行（按 real_event_id+source 去重）
+  event_updates - 每次推送/更新一行（原 history JSON 拆解）
 """
 
 import json
@@ -12,9 +16,11 @@ import aiosqlite
 
 from astrbot.api import logger
 
+from ..utils.converters import is_major_event
+
 
 class DatabaseManager:
-    """数据库管理器 - 负责历史事件数据的持久化存储（异步版本）"""
+    """数据库管理器"""
 
     def __init__(self, db_path: Path):
         """
@@ -26,117 +32,250 @@ class DatabaseManager:
         self.db_path = db_path
         self.connection: aiosqlite.Connection | None = None
 
-    async def initialize(self):
-        """异步初始化数据库，创建必要的表结构"""
-        try:
-            # 确保数据目录存在
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+    # ──────────────────────────── 初始化 / 迁移 ────────────────────────────
 
-            # 连接数据库
+    async def initialize(self):
+        """异步初始化数据库，检测并执行必要的 schema 迁移"""
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
             self.connection = await aiosqlite.connect(str(self.db_path))
-            self.connection.row_factory = aiosqlite.Row  # 返回字典形式的结果
+            self.connection.row_factory = aiosqlite.Row
 
             cursor = await self.connection.cursor()
-
-            # 创建事件表
-            await cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS events (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    event_id TEXT NOT NULL,
-                    real_event_id TEXT,
-                    unique_id TEXT,
-                    type TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    description TEXT,
-                    latitude REAL,
-                    longitude REAL,
-                    magnitude REAL,
-                    depth REAL,
-                    report_num INTEGER,
-                    time TEXT,
-                    timestamp TEXT NOT NULL,
-                    update_count INTEGER DEFAULT 1,
-                    weather_type_code TEXT,
-                    level TEXT,
-                    raw_data TEXT,
-                    history TEXT,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """
-            )
-
-            # 创建索引以提高查询性能
-            await cursor.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_event_id ON events(event_id)
-            """
-            )
-            await cursor.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_real_event_id ON events(real_event_id)
-            """
-            )
-            await cursor.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_unique_id ON events(unique_id)
-            """
-            )
-            await cursor.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_source ON events(source)
-            """
-            )
-            await cursor.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_type ON events(type)
-            """
-            )
-            await cursor.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_timestamp ON events(timestamp)
-            """
-            )
-
+            await self._ensure_schema(cursor)
             await self.connection.commit()
             logger.info(f"[灾害预警] 数据库初始化完成: {self.db_path}")
-
         except Exception as e:
             logger.error(f"[灾害预警] 数据库初始化失败: {e}")
             raise
 
+    async def _ensure_schema(self, cursor):
+        """检测 schema 版本，必要时执行迁移"""
+        await cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='events'"
+        )
+        if await cursor.fetchone():
+            # 旧 schema 特征：含 history 或 raw_data 列
+            await cursor.execute("PRAGMA table_info(events)")
+            columns = {row[1] for row in await cursor.fetchall()}
+            if "history" in columns or "raw_data" in columns:
+                logger.info("[灾害预警] 检测到旧版数据库 schema (v1)，开始迁移到 v2...")
+                await self._migrate_v1_to_v2(cursor)
+                return
+
+        await self._create_tables(cursor)
+
+    async def _create_tables(self, cursor):
+        """创建 v2 表结构（幂等）"""
+        await cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS events (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                real_event_id   TEXT,
+                unique_id       TEXT,
+                type            TEXT NOT NULL,
+                source          TEXT NOT NULL,
+                description     TEXT,
+                latitude        REAL,
+                longitude       REAL,
+                magnitude       REAL,
+                depth           REAL,
+                report_num      INTEGER,
+                weather_type_code TEXT,
+                level           TEXT,
+                time            TEXT,
+                is_major        INTEGER DEFAULT 0,
+                update_count    INTEGER DEFAULT 1,
+                created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        await cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS event_updates (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id        INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+                source_event_id TEXT,
+                report_num      INTEGER,
+                magnitude       REAL,
+                depth           REAL,
+                description     TEXT,
+                time            TEXT,
+                recorded_at     TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        for sql in (
+            "CREATE INDEX IF NOT EXISTS idx_ev_real_id   ON events(real_event_id)",
+            "CREATE INDEX IF NOT EXISTS idx_ev_unique_id ON events(unique_id)",
+            "CREATE INDEX IF NOT EXISTS idx_ev_source    ON events(source)",
+            "CREATE INDEX IF NOT EXISTS idx_ev_type      ON events(type)",
+            "CREATE INDEX IF NOT EXISTS idx_ev_time      ON events(time)",
+            "CREATE INDEX IF NOT EXISTS idx_ev_is_major  ON events(is_major)",
+            "CREATE INDEX IF NOT EXISTS idx_upd_event_id ON event_updates(event_id)",
+        ):
+            await cursor.execute(sql)
+
+    async def _migrate_v1_to_v2(self, cursor):
+        """将 v1 schema（含 history JSON blob）迁移到 v2（events + event_updates）
+        使用游标分页，每批 BATCH_SIZE 条，避免一次性将全表载入内存。
+        """
+        BATCH_SIZE = 1000
+
+        try:
+            # 1. 备份旧表，创建新表（先做结构变更，再分批写数据）
+            await cursor.execute("SELECT COUNT(*) FROM events")
+            total = (await cursor.fetchone())[0]
+            logger.info(f"[灾害预警] 开始迁移 {total} 条旧记录（每批 {BATCH_SIZE} 条）...")
+
+            await cursor.execute("DROP TABLE IF EXISTS events_v1_backup")
+            await cursor.execute("ALTER TABLE events RENAME TO events_v1_backup")
+            await cursor.execute("DROP TABLE IF EXISTS event_updates")
+            await self._create_tables(cursor)
+            await self.connection.commit()
+
+            # 2. 分批迁移（以旧表 id 为游标）
+            migrated = 0
+            last_id = 0
+
+            while True:
+                await cursor.execute(
+                    "SELECT * FROM events_v1_backup WHERE id > ? ORDER BY id ASC LIMIT ?",
+                    (last_id, BATCH_SIZE),
+                )
+                batch = [dict(row) for row in await cursor.fetchall()]
+                if not batch:
+                    break
+
+                for row in batch:
+                    try:
+                        history: list = []
+                        if row.get("history"):
+                            try:
+                                parsed = json.loads(row["history"])
+                                if isinstance(parsed, list):
+                                    history = parsed
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+
+                        is_major = is_major_event(row)
+
+                        await cursor.execute(
+                            """
+                            INSERT INTO events (
+                                real_event_id, unique_id, type, source,
+                                description, latitude, longitude,
+                                magnitude, depth, report_num,
+                                weather_type_code, level, time,
+                                is_major, update_count, created_at, updated_at
+                            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                            """,
+                            (
+                                row.get("real_event_id"),
+                                row.get("unique_id"),
+                                row.get("type", "unknown"),
+                                row.get("source", "unknown"),
+                                row.get("description"),
+                                row.get("latitude"),
+                                row.get("longitude"),
+                                row.get("magnitude"),
+                                row.get("depth"),
+                                row.get("report_num"),
+                                row.get("weather_type_code"),
+                                row.get("level"),
+                                row.get("time"),
+                                1 if is_major else 0,
+                                row.get("update_count", 1),
+                                row.get("created_at", datetime.now().isoformat()),
+                                row.get("updated_at", row.get("timestamp", datetime.now().isoformat())),
+                            ),
+                        )
+                        new_event_db_id = cursor.lastrowid
+
+                        # 历史报（从旧到新）插入 event_updates
+                        for hist in reversed(history):
+                            await cursor.execute(
+                                """
+                                INSERT INTO event_updates
+                                    (event_id, source_event_id, report_num, magnitude, depth, description, time)
+                                VALUES (?,?,?,?,?,?,?)
+                                """,
+                                (
+                                    new_event_db_id,
+                                    hist.get("event_id"),
+                                    hist.get("report_num"),
+                                    hist.get("magnitude"),
+                                    hist.get("depth"),
+                                    hist.get("description"),
+                                    hist.get("time"),
+                                ),
+                            )
+
+                        # 当前状态作为最新一条 event_update
+                        await cursor.execute(
+                            """
+                            INSERT INTO event_updates
+                                (event_id, source_event_id, report_num, magnitude, depth, description, time)
+                            VALUES (?,?,?,?,?,?,?)
+                            """,
+                            (
+                                new_event_db_id,
+                                row.get("event_id"),
+                                row.get("report_num"),
+                                row.get("magnitude"),
+                                row.get("depth"),
+                                row.get("description"),
+                                row.get("time"),
+                            ),
+                        )
+                        migrated += 1
+                    except Exception as e:
+                        logger.warning(f"[灾害预警] 迁移单条记录失败 (id={row.get('id')}): {e}")
+
+                # 每批提交一次，降低峰值内存并支持失败重试
+                await self.connection.commit()
+                last_id = batch[-1]["id"]
+                logger.info(f"[灾害预警] 迁移进度：{migrated}/{total}（id > {last_id}）")
+
+            logger.info(f"[灾害预警] 数据库迁移完成：成功迁移 {migrated}/{total} 条记录")
+            # events_v1_backup 保留作为安全备份，不立即删除
+
+        except Exception as e:
+            logger.error(f"[灾害预警] 数据库迁移失败: {e}")
+            # 尝试回滚到旧表
+            try:
+                await cursor.execute("DROP TABLE IF EXISTS event_updates")
+                await cursor.execute("DROP TABLE IF EXISTS events")
+                await cursor.execute("ALTER TABLE events_v1_backup RENAME TO events")
+                await self.connection.commit()
+                logger.info("[灾害预警] 已回滚到旧数据库 schema")
+            except Exception as re:
+                logger.error(f"[灾害预警] 回滚失败: {re}")
+            raise
+
+    # ──────────────────────────── 写操作 ────────────────────────────
+
     async def insert_event(self, event_data: dict[str, Any]) -> int:
         """
-        插入新事件记录
-
-        Args:
-            event_data: 事件数据字典
-
-        Returns:
-            插入记录的 ID
+        插入新事件，同时在 event_updates 记录首次推送。
+        返回新记录的数据库 id。
         """
         try:
             cursor = await self.connection.cursor()
-
-            # 将字典和列表字段序列化为 JSON
-            raw_data = json.dumps(event_data.get("raw_data", {}), ensure_ascii=False)
-            history = json.dumps(event_data.get("history", []), ensure_ascii=False)
-
-            # 确保 timestamp 总是有值，避免 NOT NULL 约束失败
-            timestamp = event_data.get("timestamp") or datetime.now().isoformat()
+            is_major = bool(event_data.get("is_major")) or is_major_event(event_data)
 
             await cursor.execute(
                 """
                 INSERT INTO events (
-                    event_id, real_event_id, unique_id, type, source,
-                    description, latitude, longitude, magnitude, depth,
-                    report_num, time, timestamp, update_count,
-                    weather_type_code, level, raw_data, history
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+                    real_event_id, unique_id, type, source,
+                    description, latitude, longitude,
+                    magnitude, depth, report_num,
+                    weather_type_code, level, time,
+                    is_major, update_count
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
                 (
-                    event_data.get("event_id"),
                     event_data.get("real_event_id"),
                     event_data.get("unique_id"),
                     event_data.get("type"),
@@ -147,72 +286,90 @@ class DatabaseManager:
                     event_data.get("magnitude"),
                     event_data.get("depth"),
                     event_data.get("report_num"),
-                    event_data.get("time"),
-                    timestamp,
-                    event_data.get("update_count", 1),
                     event_data.get("weather_type_code"),
                     event_data.get("level"),
-                    raw_data,
-                    history,
+                    event_data.get("time"),
+                    1 if is_major else 0,
+                    event_data.get("update_count", 1),
+                ),
+            )
+            new_id = cursor.lastrowid
+
+            await cursor.execute(
+                """
+                INSERT INTO event_updates
+                    (event_id, source_event_id, report_num, magnitude, depth, description, time)
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                (
+                    new_id,
+                    event_data.get("event_id"),
+                    event_data.get("report_num"),
+                    event_data.get("magnitude"),
+                    event_data.get("depth"),
+                    event_data.get("description"),
+                    event_data.get("time"),
                 ),
             )
 
             await self.connection.commit()
-            return cursor.lastrowid
-
+            return new_id
         except Exception as e:
-            logger.error(f"[灾害预警] 插入事件记录失败: {e}")
+            logger.error(f"[灾害预警] 插入事件失败: {e}")
             await self.connection.rollback()
             raise
 
-    async def update_event(
-        self, event_id: str, source: str, event_data: dict[str, Any]
-    ) -> bool:
+    async def update_event(self, source: str, event_data: dict[str, Any]) -> bool:
         """
-        更新已存在的事件记录
-
-        Args:
-            event_id: 事件ID
-            source: 数据源
-            event_data: 更新的事件数据
-
-        Returns:
-            是否更新成功
+        更新已有事件（以 real_event_id+source 或 unique_id+source 查找），
+        同时在 event_updates 追加一条更新记录。
         """
         try:
             cursor = await self.connection.cursor()
+            real_event_id = event_data.get("real_event_id")
+            unique_id = event_data.get("unique_id")
+            is_major = bool(event_data.get("is_major")) or is_major_event(event_data)
 
-            # 将字典和列表字段序列化为 JSON
-            raw_data = json.dumps(event_data.get("raw_data", {}), ensure_ascii=False)
-            history = json.dumps(event_data.get("history", []), ensure_ascii=False)
+            # 查找 events.id
+            db_id = None
+            if real_event_id:
+                await cursor.execute(
+                    "SELECT id FROM events WHERE real_event_id=? AND source=? LIMIT 1",
+                    (real_event_id, source),
+                )
+                r = await cursor.fetchone()
+                if r:
+                    db_id = r[0]
+            if db_id is None and unique_id:
+                await cursor.execute(
+                    "SELECT id FROM events WHERE unique_id=? AND source=? LIMIT 1",
+                    (unique_id, source),
+                )
+                r = await cursor.fetchone()
+                if r:
+                    db_id = r[0]
 
-            # 确保 timestamp 总是有值，避免 NOT NULL 约束失败
-            timestamp = event_data.get("timestamp") or datetime.now().isoformat()
+            if db_id is None:
+                return False
 
             await cursor.execute(
                 """
                 UPDATE events SET
-                    real_event_id = ?,
-                    unique_id = ?,
-                    description = ?,
-                    latitude = ?,
-                    longitude = ?,
-                    magnitude = ?,
-                    depth = ?,
-                    report_num = ?,
-                    time = ?,
-                    timestamp = ?,
-                    update_count = ?,
+                    description       = ?,
+                    latitude          = ?,
+                    longitude         = ?,
+                    magnitude         = ?,
+                    depth             = ?,
+                    report_num        = ?,
+                    time              = ?,
+                    update_count      = ?,
                     weather_type_code = ?,
-                    level = ?,
-                    raw_data = ?,
-                    history = ?,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE event_id = ? AND source = ?
-            """,
+                    level             = ?,
+                    is_major          = CASE WHEN ? = 1 THEN 1 ELSE is_major END,
+                    updated_at        = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
                 (
-                    event_data.get("real_event_id"),
-                    event_data.get("unique_id"),
                     event_data.get("description"),
                     event_data.get("latitude"),
                     event_data.get("longitude"),
@@ -220,231 +377,197 @@ class DatabaseManager:
                     event_data.get("depth"),
                     event_data.get("report_num"),
                     event_data.get("time"),
-                    timestamp,
                     event_data.get("update_count", 1),
                     event_data.get("weather_type_code"),
                     event_data.get("level"),
-                    raw_data,
-                    history,
-                    event_id,
-                    source,
+                    1 if is_major else 0,
+                    db_id,
+                ),
+            )
+
+            await cursor.execute(
+                """
+                INSERT INTO event_updates
+                    (event_id, source_event_id, report_num, magnitude, depth, description, time)
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                (
+                    db_id,
+                    event_data.get("event_id"),
+                    event_data.get("report_num"),
+                    event_data.get("magnitude"),
+                    event_data.get("depth"),
+                    event_data.get("description"),
+                    event_data.get("time"),
                 ),
             )
 
             await self.connection.commit()
-            return cursor.rowcount > 0
-
+            return True
         except Exception as e:
-            logger.error(f"[灾害预警] 更新事件记录失败: {e}")
+            logger.error(f"[灾害预警] 更新事件失败: {e}")
             await self.connection.rollback()
             raise
 
-    async def get_recent_events(self, limit: int = 250) -> list[dict[str, Any]]:
-        """
-        获取最近的事件记录
+    # ──────────────────────────── 读操作 ────────────────────────────
 
-        Args:
-            limit: 返回记录数量限制
+    async def _attach_history(self, events: list[dict]) -> list[dict]:
+        """为事件列表批量附加 event_updates（重建 history 数组）"""
+        if not events:
+            return events
+        # 用 json_each(?) 传递 ID 列表，避免动态拼接 IN 子句
+        ids = json.dumps([e["id"] for e in events])
+        cursor = await self.connection.cursor()
+        await cursor.execute(
+            """
+            SELECT * FROM event_updates
+            WHERE event_id IN (SELECT value FROM json_each(?))
+            ORDER BY event_id, recorded_at ASC
+            """,
+            (ids,),
+        )
+        rows = await cursor.fetchall()
 
-        Returns:
-            事件记录列表
-        """
+        updates_by_event: dict[int, list] = {}
+        for row in rows:
+            r = dict(row)
+            updates_by_event.setdefault(r["event_id"], []).append(r)
+
+        for event in events:
+            updates = updates_by_event.get(event["id"], [])
+            # 去掉最后一条（当前状态已在 events 主表），其余倒序排列（最新在前）
+            event["history"] = list(reversed(updates[:-1])) if len(updates) > 1 else []
+
+        return events
+
+    async def get_recent_events(self, limit: int = 500) -> list[dict[str, Any]]:
+        """获取最近事件（含 history），按更新时间倒序"""
         try:
             cursor = await self.connection.cursor()
             await cursor.execute(
-                """
-                SELECT * FROM events
-                ORDER BY timestamp DESC
-                LIMIT ?
-            """,
+                "SELECT * FROM events ORDER BY updated_at DESC, time DESC LIMIT ?",
                 (limit,),
             )
-
-            events = []
-            rows = await cursor.fetchall()
-            for row in rows:
-                event = dict(row)
-                # 反序列化 JSON 字段
-                if event.get("raw_data"):
-                    try:
-                        event["raw_data"] = json.loads(event["raw_data"])
-                    except (json.JSONDecodeError, TypeError, ValueError):
-                        event["raw_data"] = {}
-                if event.get("history"):
-                    try:
-                        event["history"] = json.loads(event["history"])
-                    except (json.JSONDecodeError, TypeError, ValueError):
-                        event["history"] = []
-                events.append(event)
-
-            return events
-
+            events = [dict(row) for row in await cursor.fetchall()]
+            return await self._attach_history(events)
         except Exception as e:
             logger.error(f"[灾害预警] 查询最近事件失败: {e}")
             return []
 
-    async def find_event_by_id(
-        self, event_id: str, source: str
+    async def find_event_by_real_id(
+        self, real_event_id: str, source: str
     ) -> dict[str, Any] | None:
-        """
-        根据事件ID和数据源查找事件
-
-        Args:
-            event_id: 事件ID
-            source: 数据源
-
-        Returns:
-            事件记录，如果不存在返回 None
-        """
+        """按 real_event_id + source 查找事件"""
         try:
             cursor = await self.connection.cursor()
             await cursor.execute(
-                """
-                SELECT * FROM events
-                WHERE event_id = ? AND source = ?
-                ORDER BY timestamp DESC
-                LIMIT 1
-            """,
-                (event_id, source),
+                "SELECT * FROM events WHERE real_event_id=? AND source=? LIMIT 1",
+                (real_event_id, source),
             )
-
             row = await cursor.fetchone()
-            if row:
-                event = dict(row)
-                # 反序列化 JSON 字段
-                if event.get("raw_data"):
-                    try:
-                        event["raw_data"] = json.loads(event["raw_data"])
-                    except (json.JSONDecodeError, TypeError, ValueError):
-                        event["raw_data"] = {}
-                if event.get("history"):
-                    try:
-                        event["history"] = json.loads(event["history"])
-                    except (json.JSONDecodeError, TypeError, ValueError):
-                        event["history"] = []
-                return event
-
-            return None
-
+            if not row:
+                return None
+            events = await self._attach_history([dict(row)])
+            return events[0]
         except Exception as e:
             logger.error(f"[灾害预警] 查找事件失败: {e}")
             return None
 
-    async def find_event_by_real_id(
-        self, real_event_id: str, source: str
-    ) -> dict[str, Any] | None:
-        """
-        根据真实事件ID和数据源查找事件
-
-        Args:
-            real_event_id: 真实事件ID
-            source: 数据源
-
-        Returns:
-            事件记录，如果不存在返回 None
-        """
+    async def get_major_events(self, limit: int = 100) -> list[dict[str, Any]]:
+        """获取重大事件（is_major=1），按事件时间倒序"""
         try:
             cursor = await self.connection.cursor()
             await cursor.execute(
-                """
-                SELECT * FROM events
-                WHERE real_event_id = ? AND source = ?
-                ORDER BY timestamp DESC
-                LIMIT 1
-            """,
-                (real_event_id, source),
+                "SELECT * FROM events WHERE is_major=1 ORDER BY time DESC, updated_at DESC LIMIT ?",
+                (limit,),
             )
-
-            row = await cursor.fetchone()
-            if row:
-                event = dict(row)
-                # 反序列化 JSON 字段
-                if event.get("raw_data"):
-                    try:
-                        event["raw_data"] = json.loads(event["raw_data"])
-                    except (json.JSONDecodeError, TypeError, ValueError):
-                        event["raw_data"] = {}
-                if event.get("history"):
-                    try:
-                        event["history"] = json.loads(event["history"])
-                    except (json.JSONDecodeError, TypeError, ValueError):
-                        event["history"] = []
-                return event
-
-            return None
-
+            events = [dict(row) for row in await cursor.fetchall()]
+            return await self._attach_history(events)
         except Exception as e:
-            logger.error(f"[灾害预警] 根据真实ID查找事件失败: {e}")
-            return None
+            logger.error(f"[灾害预警] 查询重大事件失败: {e}")
+            return []
+
+    async def get_events_count(self, event_type: str | None = None) -> int:
+        """获取事件总数"""
+        try:
+            cursor = await self.connection.cursor()
+            if event_type:
+                await cursor.execute(
+                    "SELECT COUNT(*) FROM events WHERE type=?", (event_type,)
+                )
+            else:
+                await cursor.execute("SELECT COUNT(*) FROM events")
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+        except Exception as e:
+            logger.error(f"[灾害预警] 查询事件总数失败: {e}")
+            return 0
+
+    async def get_events_paginated(
+        self,
+        page: int = 1,
+        limit: int = 50,
+        event_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """分页获取事件（含 history）"""
+        try:
+            offset = (page - 1) * limit
+            cursor = await self.connection.cursor()
+            if event_type:
+                await cursor.execute(
+                    "SELECT * FROM events WHERE type=? ORDER BY updated_at DESC, time DESC LIMIT ? OFFSET ?",
+                    (event_type, limit, offset),
+                )
+            else:
+                await cursor.execute(
+                    "SELECT * FROM events ORDER BY updated_at DESC, time DESC LIMIT ? OFFSET ?",
+                    (limit, offset),
+                )
+            events = [dict(row) for row in await cursor.fetchall()]
+            return await self._attach_history(events)
+        except Exception as e:
+            logger.error(f"[灾害预警] 分页查询失败: {e}")
+            return []
 
     async def get_statistics(self) -> dict[str, Any]:
-        """
-        获取数据库统计信息
-
-        Returns:
-            统计信息字典
-        """
+        """获取数据库统计信息"""
         try:
             cursor = await self.connection.cursor()
+            await cursor.execute("SELECT COUNT(*) FROM events")
+            total = (await cursor.fetchone())[0]
 
-            # 总事件数
-            await cursor.execute("SELECT COUNT(*) as total FROM events")
-            total_row = await cursor.fetchone()
-            total = total_row["total"]
+            await cursor.execute("SELECT type, COUNT(*) FROM events GROUP BY type")
+            by_type = {r[0]: r[1] for r in await cursor.fetchall()}
 
-            # 按类型统计
-            await cursor.execute(
-                """
-                SELECT type, COUNT(*) as count
-                FROM events
-                GROUP BY type
-            """
-            )
-            by_type_rows = await cursor.fetchall()
-            by_type = {row["type"]: row["count"] for row in by_type_rows}
+            await cursor.execute("SELECT source, COUNT(*) FROM events GROUP BY source")
+            by_source = {r[0]: r[1] for r in await cursor.fetchall()}
 
-            # 按数据源统计
-            await cursor.execute(
-                """
-                SELECT source, COUNT(*) as count
-                FROM events
-                GROUP BY source
-            """
-            )
-            by_source_rows = await cursor.fetchall()
-            by_source = {row["source"]: row["count"] for row in by_source_rows}
-
-            # 数据库文件大小
             db_size_mb = self.db_path.stat().st_size / (1024 * 1024)
-
             return {
                 "total_events": total,
                 "by_type": by_type,
                 "by_source": by_source,
                 "database_size_mb": round(db_size_mb, 2),
             }
-
         except Exception as e:
             logger.error(f"[灾害预警] 获取统计信息失败: {e}")
             return {}
 
     async def clear_all_events(self) -> bool:
-        """
-        清除所有事件记录
-
-        Returns:
-            是否清除成功
-        """
+        """清除所有事件记录"""
         try:
             cursor = await self.connection.cursor()
+            await cursor.execute("DELETE FROM event_updates")
             await cursor.execute("DELETE FROM events")
             await self.connection.commit()
             logger.info("[灾害预警] 数据库所有事件记录已清除")
             return True
         except Exception as e:
-            logger.error(f"[灾害预警] 清除数据库事件记录失败: {e}")
+            logger.error(f"[灾害预警] 清除失败: {e}")
             await self.connection.rollback()
             return False
+
+    # ──────────────────────────── 生命周期 ────────────────────────────
 
     async def close(self):
         """关闭数据库连接"""
