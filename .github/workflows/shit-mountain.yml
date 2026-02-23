@@ -17,23 +17,27 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
       
-      - name: 下载 fuck-u-code
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 安装 fuck-u-code（npm）
         run: |
-          curl -L -o fuck-u-code \
-            https://github.com/Done-0/fuck-u-code/releases/latest/download/fuck-u-code-linux-amd64
-          chmod +x fuck-u-code
+          npm install -g eff-u-code
+          fuck-u-code --version
 
       - name: 运行屎山分析 & 详细评分
         id: analyze
         run: |
           # 注意：有管道时需要检查 PIPESTATUS[0]，否则 analyze 失败会被 tee 掩盖成“成功”
-          ./fuck-u-code analyze . --verbose --locale zh --top 10 -f json -o analysis.json 2>&1 | tee analysis.log
+          fuck-u-code analyze . --verbose --locale zh --top 10 -f json -o analysis.json 2>&1 | tee analysis.log
           ANALYZE_EXIT=${PIPESTATUS[0]}
 
           # 兼容旧版本参数（部分版本仍使用 --lang）
           if [ "$ANALYZE_EXIT" -ne 0 ]; then
             echo "::warning::analyze(--locale zh) 失败，尝试兼容参数 --lang zh-CN"
-            ./fuck-u-code analyze . --verbose --lang zh-CN --top 10 -f json -o analysis.json 2>&1 | tee analysis.log
+            fuck-u-code analyze . --verbose --lang zh-CN --top 10 -f json -o analysis.json 2>&1 | tee analysis.log
             ANALYZE_EXIT=${PIPESTATUS[0]}
           fi
 
