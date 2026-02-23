@@ -1,4 +1,4 @@
-const { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Typography, TextField, Select, MenuItem, FormControl, InputLabel, Divider, IconButton } = MaterialUI;
+const { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Typography, TextField, Select, MenuItem, FormControl, InputLabel, Divider, IconButton, Tooltip } = MaterialUI;
 const { useState, useEffect } = React;
 
 /**
@@ -48,6 +48,26 @@ function SimulationModal({ open, onClose }) {
         try {
             const result = await api.getSimulationParams();
             setParams(result);
+
+            const typeKeys = Object.keys(result?.disaster_types || {});
+            if (typeKeys.length > 0) {
+                const nextType = typeKeys[0];
+                const typeData = result.disaster_types[nextType] || {};
+                const formats = typeData.formats || [];
+                const defaults = typeData.defaults || {};
+                const nextTestType = formats[0]?.value || testType;
+
+                setDisasterType(nextType);
+                setTestType(nextTestType);
+                setCustomParams(prev => ({
+                    ...prev,
+                    latitude: defaults.latitude ?? prev.latitude,
+                    longitude: defaults.longitude ?? prev.longitude,
+                    magnitude: defaults.magnitude ?? prev.magnitude,
+                    depth: defaults.depth ?? prev.depth,
+                    source: defaults.source || nextTestType || prev.source
+                }));
+            }
         } catch (e) {
             console.error('加载模拟参数失败', e);
         }
@@ -103,9 +123,7 @@ function SimulationModal({ open, onClose }) {
 
     const getDisasterTypeOptions = () => {
         if (!params) return [];
-        // 只返回 earthquake，因为后端只支持地震模拟
-        const allTypes = Object.keys(params.disaster_types || {});
-        return allTypes.filter(type => type === 'earthquake');
+        return Object.keys(params.disaster_types || {});
     };
 
     const getTestTypeOptions = () => {
@@ -155,14 +173,28 @@ function SimulationModal({ open, onClose }) {
                             value={disasterType}
                             label="灾害类型"
                             onChange={(e) => {
-                                setDisasterType(e.target.value);
-                                setTestType('cea_fanstudio');
+                                const nextType = e.target.value;
+                                const typeData = params?.disaster_types?.[nextType] || {};
+                                const formats = typeData.formats || [];
+                                const defaults = typeData.defaults || {};
+                                const nextTestType = formats[0]?.value || '';
+
+                                setDisasterType(nextType);
+                                setTestType(nextTestType);
+                                setCustomParams(prev => ({
+                                    ...prev,
+                                    latitude: defaults.latitude ?? prev.latitude,
+                                    longitude: defaults.longitude ?? prev.longitude,
+                                    magnitude: defaults.magnitude ?? prev.magnitude,
+                                    depth: defaults.depth ?? prev.depth,
+                                    source: defaults.source || nextTestType || prev.source
+                                }));
                             }}
                             disabled
                         >
                             {getDisasterTypeOptions().map(type => (
                                 <MenuItem key={type} value={type}>
-                                    {type === 'earthquake' ? '🌍 地震（仅支持）' : type}
+                                    {params?.disaster_types?.[type]?.icon || ''} {params?.disaster_types?.[type]?.label || type}
                                 </MenuItem>
                             ))}
                         </Select>
