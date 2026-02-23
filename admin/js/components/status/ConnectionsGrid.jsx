@@ -201,7 +201,7 @@ function ConnectionsGrid() {
                                     <span style={{ fontSize: '0.75rem' }}>⏱</span>
                                     延迟: <span style={{ 
                                         fontWeight: 600,
-                                        color: conn.latency < 100 ? '#4CAF50' : conn.latency < 300 ? '#FF9800' : '#F44336'
+                                        color: conn.latency < 150 ? '#4CAF50' : conn.latency < 460 ? '#FF9800' : '#F44336'
                                     }}>{conn.latency.toFixed(0)}ms</span>
                                 </Typography>
                             )}
