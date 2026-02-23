@@ -6,6 +6,9 @@
     <title>Simple Map Card</title>
     <link rel="stylesheet" href="{{ leaflet_css_url }}" />
     <script src="{{ leaflet_js_url }}"></script>
+    <script>
+        {{ map_render_helper_js }}
+    </script>
     <style>
         html, body {
             margin: 0;
@@ -64,72 +67,13 @@
             updateWhenZooming: false
         }).addTo(map);
 
-        // 稳健渲染策略：瓦片计数 + 防抖收敛 + 超时兜底
-        const READY_DEBOUNCE_MS = 120;
-        const READY_FALLBACK_MS = 2200;
-        let pendingTiles = 0;
-        let sawTileRequest = false;
-        let readyMarked = false;
-        let settleTimer = null;
-
-        const markReady = (reason) => {
-            if (readyMarked) {
-                return;
-            }
-            readyMarked = true;
-            document.body.classList.add('map-ready');
-            console.log(`[Map Ready] ${reason}`);
-        };
-
-        const scheduleSettle = (reason) => {
-            if (readyMarked) {
-                return;
-            }
-            if (settleTimer) {
-                clearTimeout(settleTimer);
-            }
-            settleTimer = setTimeout(() => {
-                if (pendingTiles <= 0 && sawTileRequest) {
-                    map.invalidateSize({ pan: false, debounceMoveend: true });
-                    requestAnimationFrame(() => requestAnimationFrame(() => markReady(reason)));
-                }
-            }, READY_DEBOUNCE_MS);
-        };
-
-        tileLayer.on('tileloadstart', () => {
-            sawTileRequest = true;
-            pendingTiles += 1;
+        // 统一调用共享 helper：瓦片计数 + 防抖收敛 + 超时兜底
+        setupStableTileRender(map, tileLayer, {
+            readyDebounceMs: 120,
+            readyFallbackMs: 2200,
+            readyClass: 'map-ready',
+            debug: true
         });
-
-        tileLayer.on('tileload', () => {
-            pendingTiles = Math.max(0, pendingTiles - 1);
-            scheduleSettle('tile-load');
-        });
-
-        tileLayer.on('tileerror', () => {
-            pendingTiles = Math.max(0, pendingTiles - 1);
-            scheduleSettle('tile-error');
-        });
-
-        tileLayer.on('load', () => {
-            sawTileRequest = true;
-            pendingTiles = 0;
-            scheduleSettle('layer-load');
-        });
-
-        map.whenReady(() => {
-            setTimeout(() => {
-                map.invalidateSize({ pan: false, debounceMoveend: true });
-                scheduleSettle('map-ready');
-            }, 0);
-        });
-
-        setTimeout(() => {
-            if (!readyMarked) {
-                map.invalidateSize({ pan: false, debounceMoveend: true });
-                markReady('fallback-timeout');
-            }
-        }, READY_FALLBACK_MS);
 
         // 使用与 Global Quake 卡片一致的震中标记 SVG
         const svgContent = `
@@ -153,7 +97,7 @@
 
         L.marker([lat, lng], { icon: epicenterIcon }).addTo(map);
 
-        // map-ready 标记由“瓦片计数 + 防抖收敛 + 超时兜底”策略统一触发
+        // map-ready 标记由共享 helper 统一触发
     </script>
 </body>
 </html>
