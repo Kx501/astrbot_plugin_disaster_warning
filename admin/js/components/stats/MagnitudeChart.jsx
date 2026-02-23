@@ -10,7 +10,9 @@ const { useMemo } = React;
  */
 function MagnitudeChart({ style }) {
     const { state } = useAppContext();
-    const { magnitudeDistribution } = state;
+    const magnitudeDistribution = (state && state.magnitudeDistribution && typeof state.magnitudeDistribution === 'object')
+        ? state.magnitudeDistribution
+        : {};
 
     const magnitudeOrder = [
         "< M3.0", "M3.0 - M3.9", "M4.0 - M4.9", "M5.0 - M5.9", "M6.0 - M6.9", "M7.0 - M7.9", ">= M8.0"
@@ -20,12 +22,18 @@ function MagnitudeChart({ style }) {
     // 将震级分布数据转换为包含百分比的数组，用于渲染条形图长度
     const chartData = useMemo(() => {
         // 计算总数
-        const total = magnitudeOrder.reduce((acc, label) => acc + (magnitudeDistribution[label] || 0), 0);
-        
-        const data = magnitudeOrder.map(label => ({
-            label,
-            value: magnitudeDistribution[label] || 0
-        }));
+        const total = magnitudeOrder.reduce((acc, label) => {
+            const value = Number(magnitudeDistribution[label] || 0);
+            return acc + (Number.isFinite(value) ? value : 0);
+        }, 0);
+
+        const data = magnitudeOrder.map(label => {
+            const value = Number(magnitudeDistribution[label] || 0);
+            return {
+                label,
+                value: Number.isFinite(value) ? value : 0
+            };
+        });
 
         // 计算最大值，用于计算百分比 (条形图长度)
         const maxValue = Math.max(...data.map(d => d.value), 1);
@@ -40,7 +48,7 @@ function MagnitudeChart({ style }) {
     if (Object.keys(magnitudeDistribution).length === 0) {
         return (
             <div className="card" style={{ textAlign: 'center', padding: '60px', ...style }}>
-                <Typography variant="body2" sx={{ opacity: 0.5 }}>统计数据加载中...</Typography>
+                <Typography variant="body2" sx={{ opacity: 0.6 }}>暂无震级统计数据，等待新事件生成</Typography>
             </div>
         );
     }

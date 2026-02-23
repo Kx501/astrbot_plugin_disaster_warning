@@ -10,6 +10,14 @@ const { Box, Typography } = MaterialUI;
 function StatsCard({ style }) {
     const { state } = useAppContext();
     const { stats, dataLoaded } = state;
+    const safeStats = {
+        totalEvents: 0,
+        earthquakeCount: 0,
+        warningCount: 0,
+        weatherCount: 0,
+        tsunamiCount: 0,
+        ...(stats || {})
+    };
 
     // 骨架屏
     if (!dataLoaded) {
@@ -64,7 +72,7 @@ function StatsCard({ style }) {
                     lineHeight: 1,
                     letterSpacing: '-2px'
                 }}>
-                    {stats.totalEvents}
+                    {safeStats.totalEvents}
                 </Typography>
                 <Typography variant="body2" sx={{ opacity: 0.6, fontWeight: 600, mt: 1, ml: 0.5 }}>
                     事件总数
@@ -73,21 +81,21 @@ function StatsCard({ style }) {
 
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2, mt: 3, pt: 2, borderTop: '1px solid var(--md-sys-color-outline-variant)' }}>
                 <Box>
-                    <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>{stats.earthquakeCount}</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>{safeStats.earthquakeCount}</Typography>
                     <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 600 }}>地震事件</Typography>
                 </Box>
                 <Box>
                     <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>
-                        {(stats.warningCount !== undefined && stats.warningCount !== null) ? stats.warningCount : '-'}
+                        {(safeStats.warningCount !== undefined && safeStats.warningCount !== null) ? safeStats.warningCount : '-'}
                     </Typography>
                     <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 600 }}>地震预警</Typography>
                 </Box>
                 <Box>
-                    <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>{stats.weatherCount}</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>{safeStats.weatherCount}</Typography>
                     <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 600 }}>气象预警</Typography>
                 </Box>
                 <Box>
-                    <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>{stats.tsunamiCount}</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>{safeStats.tsunamiCount}</Typography>
                     <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 600 }}>海啸预警</Typography>
                 </Box>
             </Box>

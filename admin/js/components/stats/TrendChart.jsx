@@ -16,11 +16,23 @@ function TrendChart({ style }) {
         fetchData();
     }, [range]);
 
+    const normalizedData = useMemo(() => {
+        const source = Array.isArray(data) ? data : [];
+        return source.map(item => {
+            const count = Number(item?.count);
+            return {
+                ...item,
+                time: item?.time ? String(item.time) : '--',
+                count: Number.isFinite(count) ? count : 0
+            };
+        });
+    }, [data]);
+
     const fetchData = async () => {
         setLoading(true);
         try {
             const response = await getTrend(range);
-            setData(response.data || []);
+            setData(Array.isArray(response.data) ? response.data : []);
         } catch (error) {
             console.error('获取趋势数据失败:', error);
         } finally {
@@ -37,7 +49,7 @@ function TrendChart({ style }) {
 
     // SVG 绘图参数
     const chartParams = useMemo(() => {
-        if (!data || data.length === 0) return null;
+        if (!normalizedData || normalizedData.length === 0) return null;
 
         const width = 1000;
         const height = 220; // 稍微增加高度以容纳X轴标签
@@ -45,14 +57,15 @@ function TrendChart({ style }) {
         const padding = { top: 20, right: 30, bottom: 30, left: 40 };
         
         // 计算最大值，保证至少为 5，且略微留白
-        const dataMax = Math.max(...data.map(d => d.count));
+        const dataMax = Math.max(...normalizedData.map(d => d.count), 0);
         const maxCount = Math.max(dataMax * 1.2, 5); // 留出 20% 顶部空间
-        
-        const xScale = (width - padding.left - padding.right) / (data.length - 1);
+
+        const denominator = Math.max(normalizedData.length - 1, 1);
+        const xScale = (width - padding.left - padding.right) / denominator;
         const yScale = (height - padding.top - padding.bottom) / maxCount;
 
         // 生成路径点
-        const points = data.map((d, i) => ({
+        const points = normalizedData.map((d, i) => ({
             x: padding.left + i * xScale,
             y: height - padding.bottom - (d.count * yScale)
         }));
@@ -86,11 +99,12 @@ function TrendChart({ style }) {
         // 生成X轴刻度 (每隔几个点显示一个时间)
         const xTicks = [];
         // 根据数据量动态决定步长，保证显示约6-8个标签
-        const tickStep = Math.max(Math.floor(data.length / 7), 1);
-        
-        for (let i = 0; i < data.length; i += tickStep) {
+        const tickStep = Math.max(Math.floor(normalizedData.length / 7), 1);
+
+        for (let i = 0; i < normalizedData.length; i += tickStep) {
             // 简单处理时间显示，只取 HH:mm
-            const timeStr = data[i].time.split(' ')[1] || data[i].time;
+            const rawTime = normalizedData[i]?.time || '--';
+            const timeStr = String(rawTime).split(' ')[1] || String(rawTime);
             xTicks.push({
                 label: timeStr,
                 x: padding.left + i * xScale,
@@ -99,10 +113,10 @@ function TrendChart({ style }) {
         }
 
         return { width, height, pathData, areaPathData, points, maxCount, xScale, yScale, padding, yTicks, xTicks };
-    }, [data]);
+    }, [normalizedData]);
 
     const handleMouseMove = (e) => {
-        if (!chartParams || !data.length) return;
+        if (!chartParams || !normalizedData.length) return;
         
         const svg = e.currentTarget;
         const rect = svg.getBoundingClientRect();
@@ -110,7 +124,7 @@ function TrendChart({ style }) {
         
         // 计算最近的点索引
         const index = Math.round((mouseX - chartParams.padding.left) / chartParams.xScale);
-        if (index >= 0 && index < data.length) {
+        if (index >= 0 && index < normalizedData.length) {
             setHoveredIndex(index);
         }
     };
@@ -135,12 +149,12 @@ function TrendChart({ style }) {
                     flex: 1, 
                     display: 'flex', 
                     justifyContent: 'center', 
-                    visibility: hoveredIndex !== null && data[hoveredIndex] ? 'visible' : 'hidden',
-                    opacity: hoveredIndex !== null && data[hoveredIndex] ? 1 : 0,
+                    visibility: hoveredIndex !== null && normalizedData[hoveredIndex] ? 'visible' : 'hidden',
+                    opacity: hoveredIndex !== null && normalizedData[hoveredIndex] ? 1 : 0,
                     transition: 'opacity 0.2s',
                     height: '24px' // 固定高度占位
                 }}>
-                    {hoveredIndex !== null && data[hoveredIndex] && (
+                    {hoveredIndex !== null && normalizedData[hoveredIndex] && (
                         <div style={{ 
                             background: 'var(--md-sys-color-primary-container)',
                             color: 'var(--md-sys-color-on-primary-container)',
@@ -153,9 +167,9 @@ function TrendChart({ style }) {
                             gap: '8px',
                             boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                         }}>
-                            <span>{data[hoveredIndex].time}</span>
+                            <span>{normalizedData[hoveredIndex].time || '--'}</span>
                             <span style={{ opacity: 0.5 }}>|</span>
-                            <span>{data[hoveredIndex].count} 次</span>
+                            <span>{normalizedData[hoveredIndex].count || 0} 次</span>
                         </div>
                     )}
                 </div>

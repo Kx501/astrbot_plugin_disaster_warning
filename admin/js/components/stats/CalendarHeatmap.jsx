@@ -52,7 +52,7 @@ function CalendarHeatmap({ style }) {
         if (showLoading) setLoading(true);
         try {
             const response = await getHeatmap(0, year);
-            setData(response.data || []);
+            setData(Array.isArray(response.data) ? response.data : []);
         } catch (error) {
             console.error('获取热力图数据失败:', error);
         } finally {
@@ -71,8 +71,8 @@ function CalendarHeatmap({ style }) {
     const { weeks, monthLabels } = useMemo(() => {
         // 数据映射 Map
         const dataMap = new Map();
-        if (data && data.length > 0) {
-            data.forEach(d => dataMap.set(d.date, d.count));
+        if (Array.isArray(data) && data.length > 0) {
+            data.forEach(d => dataMap.set(d.date, Number.isFinite(Number(d?.count)) ? Number(d.count) : 0));
         }
 
         const weeksArr = [];
@@ -168,10 +168,13 @@ function CalendarHeatmap({ style }) {
 
     // 计算热力图颜色阈值 (基于最大值动态四分位)
     const thresholds = useMemo(() => {
-        if (!data || data.length === 0) return [1, 2, 3];
+        if (!Array.isArray(data) || data.length === 0) return [1, 2, 3];
         
         // 找出最大值
-        const maxCount = Math.max(...data.map(d => d.count), 0);
+        const maxCount = Math.max(...data.map(d => {
+            const count = Number(d?.count);
+            return Number.isFinite(count) ? count : 0;
+        }), 0);
         
         // 如果数据很少(max < 4)，直接使用默认步长1
         if (maxCount < 4) return [1, 2, 3];
