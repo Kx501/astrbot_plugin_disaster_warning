@@ -5,15 +5,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Global Quake Aurora Card</title>
-    <!-- Fonts (System Default) -->
-    <!-- Removed Google Fonts for local performance -->
+    <!-- 字体（系统默认） -->
+    <!-- 为提升本地渲染性能，移除 Google Fonts -->
 
-    <!-- Leaflet.js for Map Tiles (本地加载) -->
+    <!-- Leaflet.js 地图瓦片依赖（本地加载） -->
     <link rel="stylesheet" href="{{ leaflet_css_url }}" />
     <script src="{{ leaflet_js_url }}"></script>
 
     <style>
-        /* --- Aurora Theme Tokens --- */
+        /* --- Aurora 主题变量 --- */
         :root {
             --aurora-low: #34d399;
             /* Mint */
@@ -43,7 +43,7 @@
             position: relative;
         }
 
-        /* --- Aurora Glow --- */
+        /* --- Aurora 光晕效果 --- */
         .aurora-glow {
             position: absolute;
             top: 20px;
@@ -69,7 +69,7 @@
             background: var(--aurora-high);
         }
 
-        /* --- Glass Card --- */
+        /* --- 毛玻璃卡片 --- */
         .glass-card {
             width: 540px;
             background: rgba(255, 255, 255, 0.85);
@@ -88,7 +88,7 @@
             flex-direction: column;
         }
 
-        /* --- Components --- */
+        /* --- 组件区块 --- */
         .header-section {
             padding: 32px 32px 24px;
             display: flex;
@@ -227,7 +227,7 @@
             font-weight: 500;
         }
 
-        /* --- Map Container --- */
+        /* --- 地图容器 --- */
         #map-container {
             height: 180px;
             width: calc(100% - 64px);
@@ -334,7 +334,7 @@
                 </div>
             </div>
 
-            <!-- PetalMap Container -->
+            <!-- 地图容器 -->
             <div id="map-container"></div>
 
             <div class="footer-grid">
@@ -359,7 +359,7 @@
         </div>
     </div>
 
-    <!-- Leaflet Map Script -->
+    <!-- Leaflet 地图脚本 -->
     <script>
         const lat = Number("{{ latitude }}");
         const lng = Number("{{ longitude }}");
@@ -370,23 +370,98 @@
             center: [lat, lng],
             zoom: zoomLevel,
             zoomControl: false,
-            attributionControl: false
+            attributionControl: false,
+            zoomAnimation: false,
+            fadeAnimation: false,
+            markerZoomAnimation: false
         });
 
         // 添加瓦片层（从配置读取完整URL）
         const tileLayer = L.tileLayer(`{{ tile_url }}`, {
             maxZoom: 18,
-            minZoom: 1
+            minZoom: 1,
+            keepBuffer: 2,
+            updateWhenIdle: true,
+            updateWhenZooming: false
         }).addTo(map);
 
-        // 监听瓦片加载完成事件
-        tileLayer.on('load', function() {
+        // 稳健渲染策略：瓦片计数 + 防抖收敛 + 超时兜底
+        const READY_DEBOUNCE_MS = 120;
+        const READY_FALLBACK_MS = 2200;
+        let pendingTiles = 0;
+        let sawTileRequest = false;
+        let readyMarked = false;
+        let settleTimer = null;
+
+        // 设置完成标记：只允许触发一次，避免重复状态变更
+        const markReady = (reason) => {
+            if (readyMarked) {
+                return;
+            }
+            readyMarked = true;
             document.body.classList.add('map-ready');
-            console.log("Tiles Loaded");
+            console.log(`[Map Ready] ${reason}`);
+        };
+
+        // 防抖收敛：仅在瓦片请求归零后，延迟少量时间再判定完成
+        const scheduleSettle = (reason) => {
+            if (readyMarked) {
+                return;
+            }
+            if (settleTimer) {
+                clearTimeout(settleTimer);
+            }
+            settleTimer = setTimeout(() => {
+                if (pendingTiles <= 0 && sawTileRequest) {
+                    map.invalidateSize({ pan: false, debounceMoveend: true });
+                    requestAnimationFrame(() => requestAnimationFrame(() => markReady(reason)));
+                }
+            }, READY_DEBOUNCE_MS);
+        };
+
+        // 瓦片开始加载：累计待完成计数
+        tileLayer.on('tileloadstart', () => {
+            sawTileRequest = true;
+            pendingTiles += 1;
         });
 
+        // 瓦片加载成功：递减计数并尝试收敛
+        tileLayer.on('tileload', () => {
+            pendingTiles = Math.max(0, pendingTiles - 1);
+            scheduleSettle('tile-load');
+        });
+
+        // 瓦片加载失败：同样递减计数，防止计数悬挂导致无法完成
+        tileLayer.on('tileerror', () => {
+            pendingTiles = Math.max(0, pendingTiles - 1);
+            scheduleSettle('tile-error');
+        });
+
+        // 图层级加载事件：作为兜底收敛信号
+        tileLayer.on('load', () => {
+            sawTileRequest = true;
+            pendingTiles = 0;
+            scheduleSettle('layer-load');
+        });
+
+        // 地图初始化完成后执行一次尺寸校正，降低初次截图缺块概率
+        map.whenReady(() => {
+            setTimeout(() => {
+                map.invalidateSize({ pan: false, debounceMoveend: true });
+                scheduleSettle('map-ready');
+            }, 0);
+        });
+
+        // 超时兜底：网络抖动或少量瓦片异常时，避免长期不出图
+        setTimeout(() => {
+            if (!readyMarked) {
+                map.invalidateSize({ pan: false, debounceMoveend: true });
+                markReady('fallback-timeout');
+            }
+        }, READY_FALLBACK_MS);
+
         // 创建震中标记（SVG）
-        // 转换用户提供的 D3 逻辑为 SVG 字符串
+        // 转换 D3 逻辑为 SVG 字符串
         const svgContent = `
             <svg width="30" height="30" viewBox="-15 -15 30 30" style="overflow: visible;">
                 <!-- 轮廓 (淡黄色) -->
@@ -410,8 +485,7 @@
         L.marker([lat, lng], { icon: epicenterIcon })
             .addTo(map);
 
-        // 标记渲染完成 - 移除旧的直接标记，改由瓦片加载事件触发
-        // document.body.classList.add('map-ready');
+        // map-ready 标记由“瓦片计数 + 防抖收敛 + 超时兜底”策略统一触发
         console.log("Map Init Complete");
     </script>
 </body>

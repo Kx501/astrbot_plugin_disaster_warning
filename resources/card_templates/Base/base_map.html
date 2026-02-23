@@ -49,19 +49,87 @@
             center: [lat, lng],
             zoom: zoom,
             zoomControl: false,
-            attributionControl: false
+            attributionControl: false,
+            zoomAnimation: false,
+            fadeAnimation: false,
+            markerZoomAnimation: false
         });
 
         // 添加瓦片层（从配置读取完整URL）
         const tileLayer = L.tileLayer(`{{ tile_url }}`, {
             maxZoom: 18,
-            minZoom: 0
+            minZoom: 0,
+            keepBuffer: 2,
+            updateWhenIdle: true,
+            updateWhenZooming: false
         }).addTo(map);
 
-        // 监听瓦片加载完成事件
-        tileLayer.on('load', function() {
+        // 稳健渲染策略：瓦片计数 + 防抖收敛 + 超时兜底
+        const READY_DEBOUNCE_MS = 120;
+        const READY_FALLBACK_MS = 2200;
+        let pendingTiles = 0;
+        let sawTileRequest = false;
+        let readyMarked = false;
+        let settleTimer = null;
+
+        const markReady = (reason) => {
+            if (readyMarked) {
+                return;
+            }
+            readyMarked = true;
             document.body.classList.add('map-ready');
+            console.log(`[Map Ready] ${reason}`);
+        };
+
+        const scheduleSettle = (reason) => {
+            if (readyMarked) {
+                return;
+            }
+            if (settleTimer) {
+                clearTimeout(settleTimer);
+            }
+            settleTimer = setTimeout(() => {
+                if (pendingTiles <= 0 && sawTileRequest) {
+                    map.invalidateSize({ pan: false, debounceMoveend: true });
+                    requestAnimationFrame(() => requestAnimationFrame(() => markReady(reason)));
+                }
+            }, READY_DEBOUNCE_MS);
+        };
+
+        tileLayer.on('tileloadstart', () => {
+            sawTileRequest = true;
+            pendingTiles += 1;
         });
+
+        tileLayer.on('tileload', () => {
+            pendingTiles = Math.max(0, pendingTiles - 1);
+            scheduleSettle('tile-load');
+        });
+
+        tileLayer.on('tileerror', () => {
+            pendingTiles = Math.max(0, pendingTiles - 1);
+            scheduleSettle('tile-error');
+        });
+
+        tileLayer.on('load', () => {
+            sawTileRequest = true;
+            pendingTiles = 0;
+            scheduleSettle('layer-load');
+        });
+
+        map.whenReady(() => {
+            setTimeout(() => {
+                map.invalidateSize({ pan: false, debounceMoveend: true });
+                scheduleSettle('map-ready');
+            }, 0);
+        });
+
+        setTimeout(() => {
+            if (!readyMarked) {
+                map.invalidateSize({ pan: false, debounceMoveend: true });
+                markReady('fallback-timeout');
+            }
+        }, READY_FALLBACK_MS);
 
         // 使用与 Global Quake 卡片一致的震中标记 SVG
         const svgContent = `
@@ -85,7 +153,7 @@
 
         L.marker([lat, lng], { icon: epicenterIcon }).addTo(map);
 
-        // 移除旧的 map-ready 标记，改由 tileLayer.on('load') 触发
+        // map-ready 标记由“瓦片计数 + 防抖收敛 + 超时兜底”策略统一触发
     </script>
 </body>
 </html>
