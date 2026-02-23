@@ -268,9 +268,7 @@ class StatisticsManager:
                             try:
                                 if is_major:
                                     updated_record["is_major"] = True
-                                await self.db.update_event(
-                                    event.id, source_id, updated_record
-                                )
+                                await self.db.update_event(source_id, updated_record)
                             except Exception as e:
                                 logger.error(f"[灾害预警] 更新数据库事件失败: {e}")
 
