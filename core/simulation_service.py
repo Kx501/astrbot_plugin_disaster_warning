@@ -54,7 +54,10 @@ def _next_sim_event_sequence() -> int:
 
 def get_simulation_params(config: dict[str, Any]) -> dict[str, Any]:
     """获取模拟预警可用参数（集中管理，供 Web API 使用）。"""
-    target_sessions = config.get("target_sessions", [])
+    raw_target_sessions = config.get("target_sessions", [])
+    target_sessions = [str(item) for item in raw_target_sessions]
+
+    defaults = SimulationParamsDefaults()
 
     # 当前版本仅开放 earthquake，避免前端额外硬编码过滤。
     disaster_types = {
@@ -94,11 +97,11 @@ def get_simulation_params(config: dict[str, Any]) -> dict[str, Any]:
                 {"value": "global_quake", "label": "Global Quake"},
             ],
             "defaults": {
-                "latitude": SimulationParamsDefaults.latitude,
-                "longitude": SimulationParamsDefaults.longitude,
-                "magnitude": SimulationParamsDefaults.magnitude,
-                "depth": SimulationParamsDefaults.depth,
-                "source": SimulationParamsDefaults.source,
+                "latitude": defaults.latitude,
+                "longitude": defaults.longitude,
+                "magnitude": defaults.magnitude,
+                "depth": defaults.depth,
+                "source": defaults.source,
             },
         }
     }

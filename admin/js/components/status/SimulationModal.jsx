@@ -43,17 +43,59 @@ function SimulationModal({ open, onClose }) {
         }
     }, [testType]);
 
+    const normalizeFormatOptions = (formats = []) => {
+        if (!Array.isArray(formats)) return [];
+
+        return formats
+            .map((item) => {
+                if (typeof item === 'string') {
+                    return { value: item, label: item };
+                }
+
+                if (item && typeof item === 'object') {
+                    const value = item.value || item.id || item.source || '';
+                    const label = item.label || item.name || item.title || value;
+                    if (value) {
+                        return { value, label };
+                    }
+                }
+
+                return null;
+            })
+            .filter(Boolean);
+    };
+
+    const normalizeSimulationParams = (raw) => {
+        const payload = raw?.data && typeof raw.data === 'object' ? raw.data : raw;
+        const disasterTypes = payload?.disaster_types || {};
+
+        const normalizedDisasterTypes = Object.keys(disasterTypes).reduce((acc, typeKey) => {
+            const typeData = disasterTypes[typeKey] || {};
+            acc[typeKey] = {
+                ...typeData,
+                formats: normalizeFormatOptions(typeData.formats || typeData.test_formats || [])
+            };
+            return acc;
+        }, {});
+
+        return {
+            ...payload,
+            disaster_types: normalizedDisasterTypes
+        };
+    };
+
     // 加载后端支持的模拟参数配置（灾害类型、测试格式等）
     const loadParams = async () => {
         try {
             const result = await api.getSimulationParams();
-            setParams(result);
+            const normalizedResult = normalizeSimulationParams(result);
+            setParams(normalizedResult);
 
-            const typeKeys = Object.keys(result?.disaster_types || {});
+            const typeKeys = Object.keys(normalizedResult?.disaster_types || {});
             if (typeKeys.length > 0) {
                 const nextType = typeKeys[0];
-                const typeData = result.disaster_types[nextType] || {};
-                const formats = typeData.formats || [];
+                const typeData = normalizedResult.disaster_types[nextType] || {};
+                const formats = normalizeFormatOptions(typeData.formats || []);
                 const defaults = typeData.defaults || {};
                 const nextTestType = formats[0]?.value || testType;
 
@@ -129,8 +171,7 @@ function SimulationModal({ open, onClose }) {
     const getTestTypeOptions = () => {
         if (!params || !disasterType) return [];
         const typeData = params.disaster_types[disasterType];
-        // 修复：后端返回的是 formats 数组，不是 test_formats 对象
-        return typeData?.formats || [];
+        return normalizeFormatOptions(typeData?.formats || typeData?.test_formats || []);
     };
 
     const getTargetSessionOptions = () => {
@@ -175,7 +216,7 @@ function SimulationModal({ open, onClose }) {
                             onChange={(e) => {
                                 const nextType = e.target.value;
                                 const typeData = params?.disaster_types?.[nextType] || {};
-                                const formats = typeData.formats || [];
+                                const formats = normalizeFormatOptions(typeData.formats || typeData.test_formats || []);
                                 const defaults = typeData.defaults || {};
                                 const nextTestType = formats[0]?.value || '';
 
