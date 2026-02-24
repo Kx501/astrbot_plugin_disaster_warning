@@ -3,9 +3,18 @@ const { Typography } = MaterialUI;
 function WeatherLevelCard({ style }) {
     const { state } = useAppContext();
     const { stats } = state;
-    const weatherLevels = stats && stats.weatherLevels ? stats.weatherLevels : [];
+    const rawWeatherLevels = stats && stats.weatherLevels ? stats.weatherLevels : [];
+    const weatherLevels = (Array.isArray(rawWeatherLevels) ? rawWeatherLevels : [])
+        .map(item => {
+            const count = Number(item?.count);
+            return {
+                level: item?.level || '未知级别',
+                count: Number.isFinite(count) && count > 0 ? count : 0
+            };
+        })
+        .filter(item => item.count > 0);
 
-    if (!weatherLevels || weatherLevels.length === 0) {
+    if (weatherLevels.length === 0) {
         return (
             <div className="card" style={{ height: '100%', minHeight: '200px', ...style }}>
                 <div className="chart-card-header">
@@ -19,6 +28,18 @@ function WeatherLevelCard({ style }) {
 
     const total = weatherLevels.reduce((acc, curr) => acc + curr.count, 0);
     let currentAngle = 0;
+
+    if (total <= 0) {
+        return (
+            <div className="card" style={{ height: '100%', minHeight: '200px', ...style }}>
+                <div className="chart-card-header">
+                    <span style={{ fontSize: '20px' }}>🎨</span>
+                    <Typography variant="h6">气象预警级别</Typography>
+                </div>
+                <Typography variant="body2" sx={{ opacity: 0.5, textAlign: 'center', py: 4 }}>暂无有效统计数据</Typography>
+            </div>
+        );
+    }
 
     // 颜色映射
     const getColor = (level) => {

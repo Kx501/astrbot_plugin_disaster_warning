@@ -621,6 +621,15 @@ class MessagePushManager:
                         context["leaflet_js_url"] = f"file://{leaflet_path}"
                         context["leaflet_css_url"] = f"file://{leaflet_css_path}"
 
+                    # 共享渲染 helper 统一以内联脚本注入，避免远程模式下的静态资源可达性问题
+                    map_helper_path = os.path.abspath(
+                        os.path.join(
+                            resources_dir, "card_templates", "map_render_helper.js"
+                        )
+                    )
+                    with open(map_helper_path, encoding="utf-8") as helper_file:
+                        context["map_render_helper_js"] = helper_file.read()
+
                     # Jinja2 渲染
                     template = Template(template_content)
                     html_content = template.render(**context)
@@ -831,6 +840,12 @@ class MessagePushManager:
                 os.path.join(resources_dir, "card_templates", "leaflet.css")
             )
 
+            map_helper_path = os.path.abspath(
+                os.path.join(resources_dir, "card_templates", "map_render_helper.js")
+            )
+            with open(map_helper_path, encoding="utf-8") as helper_file:
+                map_render_helper_js = helper_file.read()
+
             # 根据 playwright 模式选择资源 URL
             playwright_mode = self.config.get("message_format", {}).get(
                 "playwright_mode", "local"
@@ -852,6 +867,7 @@ class MessagePushManager:
                 "tile_url": get_tile_url_js(map_source),
                 "leaflet_js_url": leaflet_js_url,
                 "leaflet_css_url": leaflet_css_url,
+                "map_render_helper_js": map_render_helper_js,
             }
 
             # 渲染 HTML

@@ -4,16 +4,20 @@ function LogStatsCard({ style }) {
     const { state } = useAppContext();
     const { stats, config } = state;
     const { showToast } = useToast();
-    const logStats = stats && stats.logStats ? stats.logStats : null;
+    const logStats = stats && stats.logStats ? stats.logStats : {};
+    const hasLogStats = !!(stats && stats.logStats);
 
-    if (!logStats) return null;
+    const toNumber = (value, fallback = 0) => {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : fallback;
+    };
 
-    const fileCount = logStats.file_count || 1;
-    const maxCapacity = logStats.max_total_capacity_mb || 0;
-    const usagePercent = logStats.usage_percent || 0;
-    const fileSize = logStats.file_size_mb || 0;
-    const startTime = logStats.date_range?.start || '未知';
-    const endTime = logStats.date_range?.end || '未知';
+    const fileCount = toNumber(logStats.file_count, 0);
+    const maxCapacity = toNumber(logStats.max_total_capacity_mb, 0);
+    const usagePercent = toNumber(logStats.usage_percent, 0);
+    const fileSize = toNumber(logStats.file_size_mb, 0);
+    const startTime = logStats.date_range?.start || '暂无记录';
+    const endTime = logStats.date_range?.end || '暂无记录';
 
     // 进度条颜色逻辑和状态灯
     let progressColor = 'var(--md-sys-color-primary)';
@@ -87,6 +91,12 @@ function LogStatsCard({ style }) {
                 </button>
             </div>
             
+            {!hasLogStats && (
+                <Typography variant="body2" sx={{ opacity: 0.6, mb: 1 }}>
+                    当前暂无日志统计数据，请等待日志文件生成后自动更新或开启日志记录功能。
+                </Typography>
+            )}
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div style={{ background: 'var(--md-sys-color-surface-variant)', padding: '12px', borderRadius: '8px', gridColumn: 'span 2' }}>
                     <Typography variant="caption" sx={{ opacity: 0.7 }}>统计时间范围</Typography>

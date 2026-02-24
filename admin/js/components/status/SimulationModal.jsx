@@ -1,4 +1,4 @@
-const { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Typography, TextField, Select, MenuItem, FormControl, InputLabel, Divider, IconButton } = MaterialUI;
+const { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Typography, TextField, Select, MenuItem, FormControl, InputLabel, Divider, IconButton, Tooltip } = MaterialUI;
 const { useState, useEffect } = React;
 
 /**
@@ -43,11 +43,73 @@ function SimulationModal({ open, onClose }) {
         }
     }, [testType]);
 
+    const normalizeFormatOptions = (formats = []) => {
+        if (!Array.isArray(formats)) return [];
+
+        return formats
+            .map((item) => {
+                if (typeof item === 'string') {
+                    return { value: item, label: item };
+                }
+
+                if (item && typeof item === 'object') {
+                    const value = item.value || item.id || item.source || '';
+                    const label = item.label || item.name || item.title || value;
+                    if (value) {
+                        return { value, label };
+                    }
+                }
+
+                return null;
+            })
+            .filter(Boolean);
+    };
+
+    const normalizeSimulationParams = (raw) => {
+        const payload = raw?.data && typeof raw.data === 'object' ? raw.data : raw;
+        const disasterTypes = payload?.disaster_types || {};
+
+        const normalizedDisasterTypes = Object.keys(disasterTypes).reduce((acc, typeKey) => {
+            const typeData = disasterTypes[typeKey] || {};
+            acc[typeKey] = {
+                ...typeData,
+                formats: normalizeFormatOptions(typeData.formats || typeData.test_formats || [])
+            };
+            return acc;
+        }, {});
+
+        return {
+            ...payload,
+            disaster_types: normalizedDisasterTypes
+        };
+    };
+
     // 加载后端支持的模拟参数配置（灾害类型、测试格式等）
     const loadParams = async () => {
         try {
             const result = await api.getSimulationParams();
-            setParams(result);
+            const normalizedResult = normalizeSimulationParams(result);
+            setParams(normalizedResult);
+
+            const typeKeys = Object.keys(normalizedResult?.disaster_types || {});
+            if (typeKeys.length > 0) {
+                const nextType = typeKeys[0];
+                const typeData = normalizedResult.disaster_types[nextType] || {};
+                const formats = normalizeFormatOptions(typeData.formats || []);
+                const defaults = typeData.defaults || {};
+                const nextTestType = formats[0]?.value || testType;
+
+                setDisasterType(nextType);
+                setTestType(nextTestType);
+                setCustomParams(prev => ({
+                    ...prev,
+                    latitude: defaults.latitude ?? prev.latitude,
+                    longitude: defaults.longitude ?? prev.longitude,
+                    magnitude: defaults.magnitude ?? prev.magnitude,
+                    depth: defaults.depth ?? prev.depth,
+                    source: defaults.source || nextTestType || prev.source
+                }));
+            }
         } catch (e) {
             console.error('加载模拟参数失败', e);
         }
@@ -103,16 +165,13 @@ function SimulationModal({ open, onClose }) {
 
     const getDisasterTypeOptions = () => {
         if (!params) return [];
-        // 只返回 earthquake，因为后端只支持地震模拟
-        const allTypes = Object.keys(params.disaster_types || {});
-        return allTypes.filter(type => type === 'earthquake');
+        return Object.keys(params.disaster_types || {});
     };
 
     const getTestTypeOptions = () => {
         if (!params || !disasterType) return [];
         const typeData = params.disaster_types[disasterType];
-        // 修复：后端返回的是 formats 数组，不是 test_formats 对象
-        return typeData?.formats || [];
+        return normalizeFormatOptions(typeData?.formats || typeData?.test_formats || []);
     };
 
     const getTargetSessionOptions = () => {
@@ -155,14 +214,28 @@ function SimulationModal({ open, onClose }) {
                             value={disasterType}
                             label="灾害类型"
                             onChange={(e) => {
-                                setDisasterType(e.target.value);
-                                setTestType('cea_fanstudio');
+                                const nextType = e.target.value;
+                                const typeData = params?.disaster_types?.[nextType] || {};
+                                const formats = normalizeFormatOptions(typeData.formats || typeData.test_formats || []);
+                                const defaults = typeData.defaults || {};
+                                const nextTestType = formats[0]?.value || '';
+
+                                setDisasterType(nextType);
+                                setTestType(nextTestType);
+                                setCustomParams(prev => ({
+                                    ...prev,
+                                    latitude: defaults.latitude ?? prev.latitude,
+                                    longitude: defaults.longitude ?? prev.longitude,
+                                    magnitude: defaults.magnitude ?? prev.magnitude,
+                                    depth: defaults.depth ?? prev.depth,
+                                    source: defaults.source || nextTestType || prev.source
+                                }));
                             }}
                             disabled
                         >
                             {getDisasterTypeOptions().map(type => (
                                 <MenuItem key={type} value={type}>
-                                    {type === 'earthquake' ? '🌍 地震（仅支持）' : type}
+                                    {params?.disaster_types?.[type]?.icon || ''} {params?.disaster_types?.[type]?.label || type}
                                 </MenuItem>
                             ))}
                         </Select>

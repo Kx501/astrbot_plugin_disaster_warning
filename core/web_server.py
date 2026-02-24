@@ -13,17 +13,14 @@ from typing import Any
 
 from astrbot.api import logger
 
-from ..models.models import (
-    DATA_SOURCE_MAPPING,
-    DisasterEvent,
-    DisasterType,
-    EarthquakeData,
-    get_data_source_from_id,
-)
-from ..utils.fe_regions import translate_place_name
 from ..utils.geolocation import close_geoip_session, fetch_location_from_ip
 from ..utils.version import get_plugin_version
 from .config_validator import ConfigValidator
+from .simulation_service import (
+    build_earthquake_simulation,
+    get_simulation_params,
+    resolve_target_session,
+)
 
 try:
     import uvicorn
@@ -422,8 +419,17 @@ class WebAdminServer:
         async def get_events_paginated(page: int = 1, limit: int = 50, type: str = ""):
             """分页获取历史事件记录"""
             try:
-                if not self.disaster_service or not self.disaster_service.statistics_manager:
-                    return {"events": [], "total": 0, "page": page, "limit": limit, "total_pages": 0}
+                if (
+                    not self.disaster_service
+                    or not self.disaster_service.statistics_manager
+                ):
+                    return {
+                        "events": [],
+                        "total": 0,
+                        "page": page,
+                        "limit": limit,
+                        "total_pages": 0,
+                    }
 
                 db = self.disaster_service.statistics_manager.db
                 event_type = type if type else None
@@ -450,7 +456,10 @@ class WebAdminServer:
         async def get_major_events(limit: int = 100):
             """获取重大事件列表（用于时间轴）"""
             try:
-                if not self.disaster_service or not self.disaster_service.statistics_manager:
+                if (
+                    not self.disaster_service
+                    or not self.disaster_service.statistics_manager
+                ):
                     return {"events": []}
 
                 db = self.disaster_service.statistics_manager.db
@@ -573,106 +582,10 @@ class WebAdminServer:
                 return JSONResponse({"error": str(e)}, status_code=500)
 
         @self.app.get("/api/simulation-params")
-        async def get_simulation_params():
+        async def get_simulation_params_api():
             """获取模拟预警可用的参数选项"""
             try:
-                # 获取已配置的目标会话
-                target_sessions = self.config.get("target_sessions", [])
-
-                # 定义灾害类型及其数据源格式
-                disaster_types = {
-                    "earthquake": {
-                        "label": "地震",
-                        "icon": "🌍",
-                        "formats": [
-                            # FAN Studio 数据源
-                            {
-                                "value": "cea_fanstudio",
-                                "label": "FAN Studio - 中国地震预警网 (CEA)",
-                            },
-                            {
-                                "value": "cea_pr_fanstudio",
-                                "label": "FAN Studio - 中国地震预警网 (省级)",
-                            },
-                            {
-                                "value": "cenc_fanstudio",
-                                "label": "FAN Studio - 中国地震台网 (CENC)",
-                            },
-                            {
-                                "value": "cwa_fanstudio",
-                                "label": "FAN Studio - 台湾中央气象署 (强震即时警报)",
-                            },
-                            {
-                                "value": "cwa_fanstudio_report",
-                                "label": "FAN Studio - 台湾中央气象署 (地震报告)",
-                            },
-                            {
-                                "value": "jma_fanstudio",
-                                "label": "FAN Studio - 日本气象厅 (JMA)",
-                            },
-                            {"value": "usgs_fanstudio", "label": "FAN Studio - USGS"},
-                            # Wolfx 数据源
-                            {
-                                "value": "jma_wolfx",
-                                "label": "Wolfx - 日本 JMA 紧急地震速报",
-                            },
-                            {
-                                "value": "cea_wolfx",
-                                "label": "Wolfx - 中国 CENC 地震预警",
-                            },
-                            {
-                                "value": "cwa_wolfx",
-                                "label": "Wolfx - 台湾 CWA 地震预警",
-                            },
-                            {
-                                "value": "cenc_wolfx",
-                                "label": "Wolfx - 中国 CENC 地震情报",
-                            },
-                            {
-                                "value": "jma_wolfx_info",
-                                "label": "Wolfx - 日本 JMA 地震情报",
-                            },
-                            # P2P 数据源
-                            {
-                                "value": "jma_p2p",
-                                "label": "P2P - 日本 JMA 紧急地震速报",
-                            },
-                            {
-                                "value": "jma_p2p_info",
-                                "label": "P2P - 日本 JMA 地震情报",
-                            },
-                            # Global Quake
-                            {"value": "global_quake", "label": "Global Quake"},
-                        ],
-                    },
-                    "tsunami": {
-                        "label": "海啸",
-                        "icon": "🌊",
-                        "formats": [
-                            {
-                                "value": "china_tsunami_fanstudio",
-                                "label": "FAN Studio - 中国海啸预警",
-                            },
-                            {"value": "jma_tsunami_p2p", "label": "P2P - 日本海啸预警"},
-                        ],
-                    },
-                    "weather": {
-                        "label": "气象",
-                        "icon": "☁️",
-                        "formats": [
-                            {
-                                "value": "china_weather_fanstudio",
-                                "label": "FAN Studio - 中国气象预警",
-                            }
-                        ],
-                    },
-                }
-
-                return {
-                    "target_sessions": target_sessions,
-                    "disaster_types": disaster_types,
-                    "timestamp": datetime.now().isoformat(),
-                }
+                return get_simulation_params(self.config)
             except Exception as e:
                 logger.error(f"[灾害预警] 获取模拟参数失败: {e}")
                 return JSONResponse({"error": str(e)}, status_code=500)
@@ -710,17 +623,11 @@ class WebAdminServer:
                     )
 
                 # 确定目标 session
-                final_target_session = None
-                if target_session:
-                    final_target_session = target_session
-                else:
-                    target_sessions = self.config.get("target_sessions", [])
-                    if target_sessions:
-                        final_target_session = target_sessions[0]
-                    else:
-                        return JSONResponse(
-                            {"error": "未配置目标会话"}, status_code=400
-                        )
+                final_target_session = resolve_target_session(
+                    self.config, target_session
+                )
+                if not final_target_session:
+                    return JSONResponse({"error": "未配置目标会话"}, status_code=400)
 
                 # 提取地震参数
                 lat = float(custom_params.get("latitude", 39.9))
@@ -729,123 +636,44 @@ class WebAdminServer:
                 depth = float(custom_params.get("depth", 10.0))
                 source = custom_params.get("source", test_type)
 
-                # 复用命令行版本的逻辑
                 manager = self.disaster_service.message_manager
-
-                # 1. 获取数据源
-                data_source = get_data_source_from_id(source)
-                if not data_source:
-                    return JSONResponse(
-                        {
-                            "error": f"无效的数据源: {source}",
-                            "valid_sources": list(DATA_SOURCE_MAPPING.keys()),
-                        },
-                        status_code=400,
+                try:
+                    simulation_result = build_earthquake_simulation(
+                        manager,
+                        lat=lat,
+                        lon=lon,
+                        magnitude=magnitude,
+                        depth=depth,
+                        source=source,
                     )
+                except ValueError as ve:
+                    return JSONResponse({"error": str(ve)}, status_code=400)
 
-                # 2. 构造模拟数据
-                final_place_name = translate_place_name("模拟震中", lat, lon)
-
-                earthquake = EarthquakeData(
-                    id=f"sim_{int(datetime.now().timestamp())}",
-                    event_id=f"sim_{int(datetime.now().timestamp())}",
-                    source=data_source,
-                    disaster_type=DisasterType.EARTHQUAKE,
-                    shock_time=datetime.now(),
-                    latitude=lat,
-                    longitude=lon,
-                    depth=depth,
-                    magnitude=magnitude,
-                    place_name=final_place_name,
-                    source_id=source,
-                    raw_data={"test": True, "source_id": source},
-                )
-
-                # 特定数据源处理
-                if source == "usgs_fanstudio":
-                    earthquake.update_time = datetime.now()
-                if source in ["jma_p2p", "jma_wolfx", "jma_p2p_info"]:
-                    earthquake.max_scale = max(0, min(7, int(magnitude - 2)))
-                    earthquake.scale = earthquake.max_scale
-
-                disaster_event = DisasterEvent(
-                    id=f"sim_evt_{int(datetime.now().timestamp())}",
-                    data=earthquake,
-                    source=data_source,
-                    disaster_type=DisasterType.EARTHQUAKE,
-                    source_id=source,
-                )
-
-                # 3. 执行过滤器测试
-                report_lines = [
-                    "🧪 灾害预警模拟报告",
-                    f"Input: M{magnitude} @ ({lat}, {lon}), Depth {depth}km\n",
-                ]
-
-                global_pass = True
-                local_pass = True
-
-                # 全局过滤器
-                if manager.intensity_filter:
-                    if manager.intensity_filter.should_filter(earthquake):
-                        global_pass = False
-                        report_lines.append(
-                            "❌ 全局过滤: 拦截 (不满足最小震级/烈度要求)"
-                        )
-                    else:
-                        report_lines.append("✅ 全局过滤: 通过")
-
-                # 本地监控
-                if manager.local_monitor:
-                    result = manager.local_monitor.inject_local_estimation(earthquake)
-                    if result is None:
-                        report_lines.append("ℹ️ 本地监控: 未启用")
-                    else:
-                        allowed = result.get("is_allowed", True)
-                        dist = result.get("distance")
-                        inte = result.get("intensity")
-
-                        if allowed:
-                            report_lines.append("✅ 本地监控: 触发")
-                        else:
-                            local_pass = False
-                            report_lines.append("❌ 本地监控: 拦截 (严格模式生效中)")
-
-                        report_lines.append(
-                            f"   ⦁ 严格模式: {'开启' if manager.local_monitor.strict_mode else '关闭 (仅计算不拦截)'}"
-                        )
-                        dist_str = f"{dist:.1f} km" if dist is not None else "未知"
-                        inte_str = f"{inte:.1f}" if inte is not None else "未知"
-                        report_lines.extend(
-                            [
-                                f"   ⦁ 距本地: {dist_str}",
-                                f"   ⦁ 预估最大本地烈度: {inte_str}",
-                                f"   ⦁ 本地烈度阈值: {manager.local_monitor.threshold}",
-                            ]
-                        )
-                else:
-                    report_lines.append("ℹ️ 本地监控: 未配置")
-
-                # 4. 如果通过过滤器，发送消息
-                if global_pass and local_pass:
+                if simulation_result.global_pass and simulation_result.local_pass:
                     logger.info("[灾害预警] 开始构建模拟预警消息...")
-                    msg_chain = await manager.build_message_async(disaster_event)
+                    msg_chain = await manager.build_message_async(
+                        simulation_result.disaster_event
+                    )
                     await manager._send_message(final_target_session, msg_chain)
                     logger.info(
                         f"[灾害预警] ✅ 模拟事件已成功推送到 {final_target_session}"
                     )
-                    report_lines.append(f"\n✅ 消息已发送到: {final_target_session}")
+                    simulation_result.report_lines.append(
+                        f"\n✅ 消息已发送到: {final_target_session}"
+                    )
 
                     return {
                         "success": True,
-                        "message": "\n".join(report_lines),
+                        "message": "\n".join(simulation_result.report_lines),
                     }
-                else:
-                    report_lines.append("\n⛔ 结论: 该事件不会触发预警推送。")
-                    return {
-                        "success": False,
-                        "message": "\n".join(report_lines),
-                    }
+
+                simulation_result.report_lines.append(
+                    "\n⛔ 结论: 该事件不会触发预警推送。"
+                )
+                return {
+                    "success": False,
+                    "message": "\n".join(simulation_result.report_lines),
+                }
 
             except Exception as e:
                 logger.error(f"[灾害预警] 模拟推送失败: {e}")
@@ -1300,6 +1128,9 @@ class WebAdminServer:
         """后台定期更新延迟缓存"""
         logger.info("[灾害预警] 启动后台延迟检测任务")
 
+        # 新增：记录连续失败次数
+        ping_failures = {}
+
         while True:
             try:
                 # 获取所有预期的数据源
@@ -1321,9 +1152,17 @@ class WebAdminServer:
                         *ping_tasks.values(), return_exceptions=True
                     )
                     for source_name, result in zip(ping_tasks.keys(), results):
-                        if isinstance(result, Exception):
-                            self._latency_cache[source_name] = None
+                        if isinstance(result, Exception) or result is None:
+                            # 失败时增加计数
+                            ping_failures[source_name] = (
+                                ping_failures.get(source_name, 0) + 1
+                            )
+                            # 连续失败 3 次才判定为无法测量
+                            if ping_failures[source_name] >= 3:
+                                self._latency_cache[source_name] = None
                         else:
+                            # 成功时重置计数并更新缓存
+                            ping_failures[source_name] = 0
                             self._latency_cache[source_name] = result
 
                 logger.debug(f"[灾害预警] 延迟缓存已更新: {self._latency_cache}")

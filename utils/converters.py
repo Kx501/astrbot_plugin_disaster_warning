@@ -3,6 +3,9 @@
 提供震度/烈度转换、数值转换等通用功能
 """
 
+import re
+from typing import Any
+
 # 气象预警判定为重大事件的颜色关键词
 _MAJOR_WEATHER_KEYWORDS = ("红", "橙")
 
@@ -27,9 +30,6 @@ def is_major_event(record: dict) -> bool:
         desc = record.get("description") or ""
         return any(kw in s for kw in _MAJOR_WEATHER_KEYWORDS for s in (level, desc))
     return False
-
-import re
-from typing import Any
 
 
 def safe_float_convert(value: Any) -> float | None:

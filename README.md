@@ -915,6 +915,7 @@ AstrBot/
          ├─ metadata.yaml                  # 插件元数据信息
          ├─ README.md                      # 插件说明文档
          ├─ requirements.txt               # 插件依赖列表
+         ├─ run_ruff.bat                   # Ruff 一键格式化与自动修复脚本（开发辅助）
          ├─ admin/                         # Web 管理端前端资源
          │   ├─ css/                       # 样式文件目录
          │   ├─ fonts/                     # 字体文件目录
@@ -945,6 +946,7 @@ AstrBot/
          │   ├─ message_manager.py         # 消息推送管理器
          │   ├─ statistics_manager.py      # 统计数据持久化管理器
          │   ├─ telemetry_manager.py       # 匿名遥测管理器
+         │   ├─ simulation_service.py      # 模拟预警统一服务（参数/构建/过滤测试）
          │   ├─ web_server.py              # Web 管理服务器 (FastAPI)
          │   ├─ websocket_manager.py       # WebSocket 连接管理器
          │   ├─ handlers/                  # 数据处理器目录
@@ -991,7 +993,8 @@ AstrBot/
              └─ card_templates/            # 消息卡片 HTML 模板
                  ├─ Aurora/                # 极光主题模板
                  ├─ Base/                  # 基础通用模板 (地图瓦片、地震列表等)
-                 └─ DarkNight/             # 暗夜主题模板
+                 ├─ DarkNight/             # 暗夜主题模板
+                 └─ map_render_helper.js   # 地图瓦片渲染共享 helper（统一 map-ready 收敛逻辑）
 ```
 
 ### 💾 数据持久化与存储

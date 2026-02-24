@@ -18,16 +18,9 @@ from astrbot.api.star import Context, Star
 
 from .core.config_validator import ConfigValidator
 from .core.disaster_service import get_disaster_service, stop_disaster_service
+from .core.simulation_service import build_earthquake_simulation
 from .core.telemetry_manager import TelemetryManager
 from .core.web_server import WebAdminServer
-from .models.models import (
-    DATA_SOURCE_MAPPING,
-    DisasterEvent,
-    DisasterType,
-    EarthquakeData,
-    get_data_source_from_id,
-)
-from .utils.fe_regions import translate_place_name
 from .utils.version import get_plugin_version
 
 
@@ -984,118 +977,29 @@ class DisasterWarningPlugin(Star):
             return
 
         try:
-            # 获取数据源
-            data_source = get_data_source_from_id(source)
-            if not data_source:
-                valid_sources = ", ".join(DATA_SOURCE_MAPPING.keys())
-                yield event.plain_result(
-                    f"❌ 无效的数据源: {source}\n可用数据源: {valid_sources}"
-                )
-                return
-
-            # 1. 构造模拟数据
-            # 自动根据传入的经纬度生成地名
-            final_place_name = translate_place_name("模拟震中", lat, lon)
-
-            earthquake = EarthquakeData(
-                id=f"sim_{int(datetime.now().timestamp())}",
-                event_id=f"sim_{int(datetime.now().timestamp())}",
-                source=data_source,
-                disaster_type=DisasterType.EARTHQUAKE,
-                shock_time=datetime.now(),
-                latitude=lat,
-                longitude=lon,
-                depth=depth,
-                magnitude=magnitude,
-                place_name=final_place_name,
-                source_id=source,
-                raw_data={"test": True, "source_id": source},
-            )
-
-            # 针对USGS等特定数据源的特殊处理
-            if source == "usgs_fanstudio":
-                earthquake.update_time = datetime.now()
-
-            # P2P数据源需要最大震度
-            if source in ["jma_p2p", "jma_wolfx", "jma_p2p_info"]:
-                # 简单估算一个震度用于测试
-                earthquake.max_scale = max(0, min(7, int(magnitude - 2)))
-                earthquake.scale = earthquake.max_scale
-
-            disaster_event = DisasterEvent(
-                id=f"sim_evt_{int(datetime.now().timestamp())}",
-                data=earthquake,
-                source=data_source,
-                disaster_type=DisasterType.EARTHQUAKE,
-                source_id=source,
-            )
-
             manager = self.disaster_service.message_manager
-
-            # 分开的消息构建
-            report_lines = [
-                "🧪 灾害预警模拟报告",
-                f"Input: M{magnitude} @ ({lat}, {lon}), Depth {depth}km\n",
-            ]
-
-            # 2. 检查全局过滤器 (Global Filters)
-            global_pass = True
-            if manager.intensity_filter:
-                if manager.intensity_filter.should_filter(earthquake):
-                    global_pass = False
-                    report_lines.append("❌ 全局过滤: 拦截 (不满足最小震级/烈度要求)")
-                else:
-                    report_lines.append("✅ 全局过滤: 通过")
-
-            # 3. 检查本地监控 (Local Monitor)
-            local_pass = True
-            if manager.local_monitor:
-                # 使用统一的辅助方法，返回 None 表示未启用，返回 dict 表示启用
-                result = manager.local_monitor.inject_local_estimation(earthquake)
-
-                if result is None:
-                    # 未启用
-                    report_lines.append("ℹ️ 本地监控: 未启用")
-                else:
-                    allowed = result.get("is_allowed", True)
-                    dist = result.get("distance")
-                    inte = result.get("intensity")
-
-                    if allowed:
-                        report_lines.append("✅ 本地监控: 触发")
-                    else:
-                        local_pass = False
-                        report_lines.append("❌ 本地监控: 拦截 (严格模式生效中)")
-
-                    report_lines.append(
-                        f"   ⦁ 严格模式: {'开启' if manager.local_monitor.strict_mode else '关闭 (仅计算不拦截)'}"
-                    )
-
-                    # 安全格式化，处理可能的 None 值
-                    dist_str = f"{dist:.1f} km" if dist is not None else "未知"
-                    inte_str = f"{inte:.1f}" if inte is not None else "未知"
-                    report_lines.extend(
-                        [
-                            f"   ⦁ 距本地: {dist_str}",
-                            f"   ⦁ 预估最大本地烈度: {inte_str}",
-                            f"   ⦁ 本地烈度阈值: {manager.local_monitor.threshold}",
-                        ]
-                    )
-            else:
-                report_lines.append("ℹ️ 本地监控: 未配置")
+            simulation_result = build_earthquake_simulation(
+                manager,
+                lat=lat,
+                lon=lon,
+                magnitude=magnitude,
+                depth=depth,
+                source=source,
+            )
 
             # 发送报告
-            yield event.plain_result("\n".join(report_lines))
+            yield event.plain_result("\n".join(simulation_result.report_lines))
 
             # 稍作等待，确保第一条消息发出
             await asyncio.sleep(1)
 
             # 4. 模拟消息构建
-            if global_pass and local_pass:
+            if simulation_result.global_pass and simulation_result.local_pass:
                 try:
                     logger.info("[灾害预警] 开始构建模拟预警消息...")
-                    # 使用异步版本以支持卡片渲染
-                    msg_chain = await manager.build_message_async(disaster_event)
+                    msg_chain = await manager.build_message_async(
+                        simulation_result.disaster_event
+                    )
                     logger.info(
                         f"[灾害预警] 消息构建成功，链长度: {len(msg_chain.chain)}"
                     )

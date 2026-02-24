@@ -170,11 +170,9 @@ class WebSocketManager:
                                 asyncio.get_event_loop().time()
                             )
                             try:
-                                # 记录二进制消息（记录长度而非内容）
+                                # 记录二进制消息（由 message_logger 输出安全摘要）
                                 if self.message_logger:
-                                    self._log_message(
-                                        name, f"<binary:{len(message)} bytes>", uri
-                                    )
+                                    self._log_message(name, message, uri)
 
                                 # 智能处理器查找（支持前缀匹配）
                                 handler_name = self._find_handler_by_prefix(name)

@@ -5,6 +5,9 @@ function MaxMagCard({ style }) {
     const { stats, config } = state;
     const displayTimezone = config.displayTimezone || 'UTC+8';
     const maxMag = stats && stats.maxMagnitude ? stats.maxMagnitude : null;
+    const magValue = Number(maxMag?.value);
+    const displayMag = Number.isFinite(magValue) ? magValue.toFixed(1) : '--';
+    const displayPlace = maxMag?.place_name || '暂无震中信息';
 
     // 格式化时间
     const formatTime = (time) => {
@@ -50,9 +53,9 @@ function MaxMagCard({ style }) {
                     color: 'var(--md-sys-color-error)',
                     lineHeight: 1
                 }}>
-                    <span style={{ marginRight: '8px' }}>M</span>{parseFloat(maxMag.value).toFixed(1)}
+                    <span style={{ marginRight: '8px' }}>M</span>{displayMag}
                 </Typography>
-                {maxMag.source && (
+                {maxMag?.source && (
                     <Chip
                         label={formatSourceName(maxMag.source)}
                         size="small"
@@ -67,11 +70,11 @@ function MaxMagCard({ style }) {
             </div>
 
             <Typography variant="body1" sx={{ fontWeight: 800, mb: 1, color: 'var(--md-sys-color-on-error-container)' }}>
-                {maxMag.place_name}
+                {displayPlace}
             </Typography>
             
             <Typography variant="body2" sx={{ opacity: 0.7, color: 'var(--md-sys-color-on-error-container)' }}>
-                {formatTime(maxMag.time)}
+                {formatTime(maxMag?.time)}
             </Typography>
         </div>
     );
