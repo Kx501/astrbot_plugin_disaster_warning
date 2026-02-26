@@ -68,6 +68,8 @@ class DatabaseManager:
             # 关键修复：在创建索引前先补齐缺失列，避免 idx_ev_source_id 创建失败
             if "source_id" not in columns:
                 await cursor.execute("ALTER TABLE events ADD COLUMN source_id TEXT")
+            if "subtitle" not in columns:
+                await cursor.execute("ALTER TABLE events ADD COLUMN subtitle TEXT")
 
         await self._create_tables(cursor)
 
@@ -83,6 +85,7 @@ class DatabaseManager:
                 source          TEXT NOT NULL,
                 source_id       TEXT,
                 description     TEXT,
+                subtitle        TEXT,
                 latitude        REAL,
                 longitude       REAL,
                 magnitude       REAL,
@@ -175,11 +178,11 @@ class DatabaseManager:
                             """
                             INSERT INTO events (
                                 real_event_id, unique_id, type, source,
-                                source_id, description, latitude, longitude,
+                                source_id, description, subtitle, latitude, longitude,
                                 magnitude, depth, report_num,
                                 weather_type_code, level, time,
                                 is_major, update_count, created_at, updated_at
-                            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                             """,
                             (
                                 row.get("real_event_id"),
@@ -188,6 +191,7 @@ class DatabaseManager:
                                 row.get("source", "unknown"),
                                 row.get("source_id"),
                                 row.get("description"),
+                                row.get("subtitle"),
                                 row.get("latitude"),
                                 row.get("longitude"),
                                 row.get("magnitude"),
@@ -289,11 +293,11 @@ class DatabaseManager:
                 """
                 INSERT INTO events (
                     real_event_id, unique_id, type, source, source_id,
-                    description, latitude, longitude,
+                    description, subtitle, latitude, longitude,
                     magnitude, depth, report_num,
                     weather_type_code, level, time,
                     is_major, update_count
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     event_data.get("real_event_id"),
@@ -302,6 +306,7 @@ class DatabaseManager:
                     event_data.get("source"),
                     event_data.get("source_id"),
                     event_data.get("description"),
+                    event_data.get("subtitle"),
                     event_data.get("latitude"),
                     event_data.get("longitude"),
                     event_data.get("magnitude"),
@@ -378,6 +383,7 @@ class DatabaseManager:
                 UPDATE events SET
                     source_id         = ?,
                     description       = ?,
+                    subtitle          = ?,
                     latitude          = ?,
                     longitude         = ?,
                     magnitude         = ?,
@@ -394,6 +400,7 @@ class DatabaseManager:
                 (
                     event_data.get("source_id"),
                     event_data.get("description"),
+                    event_data.get("subtitle"),
                     event_data.get("latitude"),
                     event_data.get("longitude"),
                     event_data.get("magnitude"),

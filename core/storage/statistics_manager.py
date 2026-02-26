@@ -315,10 +315,12 @@ class StatisticsManager:
                 record["unique_id"] = event_unique_id
                 record["source_id"] = event.source_id or ""
                 record["description"] = self._get_event_description(event)
+                record["subtitle"] = ""
                 record["update_count"] = 1
                 record.pop("history", None)
 
                 if isinstance(event.data, WeatherAlarmData):
+                    record["subtitle"] = event.data.headline or ""
                     record["time"] = (
                         event.data.issue_time.isoformat()
                         if event.data.issue_time
@@ -367,6 +369,7 @@ class StatisticsManager:
                 "source": source_id,
                 "source_id": event.source_id or "",
                 "description": self._get_event_description(event),
+                "subtitle": "",
                 "unique_id": event_unique_id,
                 "update_count": 1,
             }
@@ -386,6 +389,7 @@ class StatisticsManager:
                 if event.data.report_num:
                     push_record["report_num"] = event.data.report_num
             elif isinstance(event.data, WeatherAlarmData):
+                push_record["subtitle"] = event.data.headline or ""
                 push_record["time"] = (
                     event.data.issue_time.isoformat() if event.data.issue_time else None
                 )

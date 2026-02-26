@@ -582,7 +582,9 @@ function EventsList() {
         const isEarthquake = eventType === 'earthquake' || eventType === 'earthquake_warning';
         const isTsunami = eventType === 'tsunami';
         const isWeather = eventType === 'weather_alarm';
-        const displayTitle = isEarthquake ? buildEarthquakeTitle(evt) : (evt.description || '未知位置');
+        const displayTitle = isEarthquake
+            ? buildEarthquakeTitle(evt)
+            : (isWeather ? (evt.subtitle || evt.description || '未知位置') : (evt.description || '未知位置'));
 
         let badgeContent = '❓';
         let badgeClass = 'badge-unknown';
