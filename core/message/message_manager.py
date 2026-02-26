@@ -486,7 +486,9 @@ class MessagePushManager:
             # 气象预警事件需要进行过滤
             if isinstance(event.data, WeatherAlarmData):
                 title_text = event.data.title or event.data.headline or ""
-                if runtime_components["weather_filter"].should_filter(title_text):
+                if runtime_components["weather_filter"].should_filter(
+                    title_text, event.data.headline or ""
+                ):
                     return reject("气象关键字过滤")
             # 海啸和气象事件通过了过滤，可以推送
             return True
