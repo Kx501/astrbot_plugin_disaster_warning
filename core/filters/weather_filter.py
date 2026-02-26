@@ -70,6 +70,14 @@ class WeatherFilter:
             if "气象台" in place:
                 continue
             return place
+
+        # 兜底：未匹配到标准行政区后缀时，截取“气象站/气象台”前文本用于API模糊搜索
+        fallback_text = re.split(r"气象(?:站|台)", headline_text, maxsplit=1)[0].strip()
+        if fallback_text:
+            fallback_text = re.sub(r"^[^\u4e00-\u9fa5]+", "", fallback_text)
+            fallback_text = re.sub(r"[^\u4e00-\u9fa5]+$", "", fallback_text)
+            if fallback_text:
+                return fallback_text
         return None
 
     def _query_province_by_place_name(self, place_name: str) -> str | None:
