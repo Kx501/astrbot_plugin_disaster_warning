@@ -470,7 +470,9 @@ function EventsList() {
         const isEarthquake = eventType === 'earthquake' || eventType === 'earthquake_warning';
         const isTsunami = eventType === 'tsunami';
         const isWeather = eventType === 'weather_alarm';
-        const displayTitle = isEarthquake ? buildEarthquakeTitle(evt) : (evt.description || '未知位置');
+        const displayTitle = isEarthquake
+            ? buildEarthquakeTitle(evt)
+            : (isWeather ? (evt.subtitle || evt.description || '未知位置') : (evt.description || '未知位置'));
 
         let badgeContent = '❓';
         let badgeClass = 'badge-unknown';
@@ -811,7 +813,7 @@ function EventsList() {
                         return (
                             <div key={group.id} className="event-group">
                                 {/* 折叠状态：只显示最新一条 */}
-                                {!isExpanded && (
+                                <Collapse in={!isExpanded} timeout={220} unmountOnExit>
                                     <div onClick={() => group.updateCount > 1 && toggleEventGroup(group.id)}>
                                         {renderEventCard(
                                             {
@@ -826,10 +828,10 @@ function EventsList() {
                                             null
                                         )}
                                     </div>
-                                )}
+                                </Collapse>
 
                                 {/* 展开状态：显示所有报的时间线 */}
-                                {isExpanded && (
+                                <Collapse in={isExpanded} timeout={260} unmountOnExit>
                                     <div className="card" style={{ 
                                         padding: '24px',
                                         position: 'relative'
@@ -1019,7 +1021,7 @@ function EventsList() {
                                             })}
                                         </div>
                                     </div>
-                                )}
+                                </Collapse>
                             </div>
                         );
                     })}
