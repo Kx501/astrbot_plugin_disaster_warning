@@ -701,7 +701,9 @@ class DatabaseManager:
     async def get_event_sources(self, event_type: str | None = None) -> list[str]:
         """获取事件数据源列表（可按类型过滤，兼容旧前端）"""
         options = await self.get_event_source_options(event_type)
-        return [opt.get("source_label", "") for opt in options if opt.get("source_label")]
+        return [
+            opt.get("source_label", "") for opt in options if opt.get("source_label")
+        ]
 
     async def get_statistics(self) -> dict[str, Any]:
         """获取数据库统计信息"""
