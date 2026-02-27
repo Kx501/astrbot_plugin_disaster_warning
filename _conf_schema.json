@@ -579,7 +579,7 @@
             "hint": "启用后将应用关键词和级别过滤",
             "default": false
           },
-          "provinces": {
+          "keywords": {
             "description": "关键词白名单",
             "type": "list",
             "hint": "留空推送全国，填写关键词后只推送对应地区（如：广州、广东、上海、香港、江南区等）",
