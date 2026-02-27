@@ -100,7 +100,13 @@ class WeatherFilter:
         try:
             with urlopen(request, timeout=5) as response:
                 payload = json.loads(response.read().decode("utf-8"))
-        except (HTTPError, URLError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        except (
+            HTTPError,
+            URLError,
+            TimeoutError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+        ) as exc:
             logger.debug(f"[灾害预警] 行政区划查询失败: {place_name}, 错误: {exc}")
             return None
 
