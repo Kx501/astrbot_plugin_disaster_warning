@@ -13,7 +13,7 @@
 
 ### ✨ New Features (新功能)
 
-- **WebUI 首次完整发布** by @DBJD-CR & @Aloys233 in #25 #34 #68 #70 #72 #77 #78 #81 #83 #84 #85 #86 #89 #91
+- **WebUI 首次完整发布** by @DBJD-CR & @Aloys233 &openai-codex[bot] in #25 #34 #68 #70 #72 #77 #78 #81 #83 #84 #85 #86 #89 #91
   - 正式提供 `运行状态 / 事件列表 / 数据统计 / 配置管理` 四大页面，形成统一操作入口
   - 前端定位从“信息展示”升级为“日常值守 + 运维操作 + 配置维护”的一体化控制台
 
@@ -89,6 +89,7 @@
 ### 📚 Documentation (文档)
 
 - 修订适用于 v1.4.0 的 README 文档、更新日志和贡献指南，更新 PR 模板 by @DBJD-CR in #91
+- 修订 DeepWiki 生成指南 by @DBJD-CR in #91
 
 ### 🔧 Chore (杂项)
 
@@ -100,6 +101,10 @@
 - 插件元数据中添加最低 AstrBot 版本要求为 v4.11.2+，并声明可用性为所有平台可用 by @DBJD-CR in #91
 
 ---
+
+## ❤️ New Contributors
+
+@openai-codex[bot] made their first contribution in #81
 
 **Full Changelog**: https://github.com/DBJD-CR/astrbot_plugin_disaster_warning/compare/v1.3.9...v1.4.0
 
