@@ -31,9 +31,6 @@ function EventsList() {
 
     // 持有当前进行中请求的 AbortController，新请求发起时 abort 旧请求
     const abortControllerRef = useRef(null);
-    const eventsScrollRef = useRef(null);
-    const preservedScrollTopRef = useRef(null);
-    const shouldRestoreScrollRef = useRef(false);
 
     const fetchEvents = useCallback((
         page,
@@ -55,9 +52,8 @@ function EventsList() {
         const preserveScroll = Boolean(options?.preserveScroll);
         const shouldToggleLoading = !preserveScroll;
 
-        if (preserveScroll && eventsScrollRef.current) {
-            preservedScrollTopRef.current = eventsScrollRef.current.scrollTop;
-            shouldRestoreScrollRef.current = true;
+        if (preserveScroll) {
+            preserveScrollPosition();
         }
 
         if (shouldToggleLoading) {
@@ -201,11 +197,6 @@ function EventsList() {
         return Array.isArray(events) ? events : [];
     }, [events]);
 
-    const parseMagnitudeValue = (mag) => {
-        const num = Number(mag);
-        return Number.isFinite(num) ? num : null;
-    };
-
     const getEventTimeMs = (event) => {
         const parsed = parseEventTimeToDate(event?.time || event?.timestamp, event?.source || '');
         return parsed ? parsed.getTime() : 0;
@@ -300,28 +291,10 @@ function EventsList() {
 
     const displayGroupedEvents = useMemo(() => groupedEvents, [groupedEvents]);
 
-    useEffect(() => {
-        if (!shouldRestoreScrollRef.current) return;
-
-        const targetTop = preservedScrollTopRef.current;
-        if (targetTop === null || targetTop === undefined) {
-            shouldRestoreScrollRef.current = false;
-            return;
-        }
-
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                if (eventsScrollRef.current) {
-                    const maxScrollTop = Math.max(
-                        eventsScrollRef.current.scrollHeight - eventsScrollRef.current.clientHeight,
-                        0
-                    );
-                    eventsScrollRef.current.scrollTop = Math.min(targetTop, maxScrollTop);
-                }
-                shouldRestoreScrollRef.current = false;
-            });
-        });
-    }, [groupedEvents, loading]);
+    const {
+        scrollRef: eventsScrollRef,
+        preserveScrollPosition,
+    } = usePreservedScroll([groupedEvents, loading]);
 
     const toggleEventGroup = (groupId) => {
         setExpandedEvents(prev => {
