@@ -133,11 +133,12 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    color: #fff;
+    color: #1C1B1F;
     font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background:
-        radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.12), transparent 42%),
-        linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        radial-gradient(ellipse at 20% 15%, rgba(103, 80, 164, 0.14), transparent 52%),
+        radial-gradient(ellipse at 80% 85%, rgba(103, 80, 164, 0.09), transparent 52%),
+        #FEF7FF;
     opacity: 1;
     transform: translateZ(0);
     will-change: opacity, transform;
@@ -145,9 +146,11 @@ body {
 
 html.theme-dark .boot-loader,
 body.dark-theme .boot-loader {
+    color: #E6E1E5;
     background:
-        radial-gradient(circle at 20% 20%, rgba(208, 188, 255, 0.14), transparent 42%),
-        linear-gradient(135deg, #1a1630 0%, #2b1f47 100%);
+        radial-gradient(ellipse at 20% 15%, rgba(208, 188, 255, 0.13), transparent 52%),
+        radial-gradient(ellipse at 80% 85%, rgba(103, 80, 164, 0.18), transparent 52%),
+        #141218;
 }
 
 #loading-skeleton.is-exiting {
@@ -164,34 +167,64 @@ body.dark-theme .boot-loader {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 48px;
-    background: rgba(255, 255, 255, 0.18);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    animation: boot-loader-pulse 2s ease-in-out infinite;
-    will-change: transform, opacity;
+    background: rgba(103, 80, 164, 0.08);
+    border: 1px solid rgba(103, 80, 164, 0.18);
+    box-shadow: 0 4px 24px rgba(103, 80, 164, 0.12);
+    overflow: hidden;
+    animation: boot-loader-float 2.4s ease-in-out infinite;
+    will-change: transform;
+}
+
+.boot-loader__logo img {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+    border-radius: 8px;
+}
+
+html.theme-dark .boot-loader__logo,
+body.dark-theme .boot-loader__logo {
+    background: rgba(208, 188, 255, 0.08);
+    border-color: rgba(208, 188, 255, 0.15);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
 }
 
 .boot-loader__title {
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 700;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
     letter-spacing: 0.01em;
+    color: #1C1B1F;
+}
+
+html.theme-dark .boot-loader__title,
+body.dark-theme .boot-loader__title {
+    color: #E6E1E5;
 }
 
 .boot-loader__subtitle {
-    font-size: 14px;
-    opacity: 0.84;
-    margin-bottom: 24px;
+    font-size: 13px;
+    color: #49454F;
+    margin-bottom: 28px;
+}
+
+html.theme-dark .boot-loader__subtitle,
+body.dark-theme .boot-loader__subtitle {
+    color: #CAC4D0;
 }
 
 .boot-loader__progress {
-    width: min(280px, 72vw);
-    height: 4px;
+    width: min(260px, 68vw);
+    height: 3px;
     border-radius: 999px;
     overflow: hidden;
-    background: rgba(255, 255, 255, 0.18);
+    background: rgba(103, 80, 164, 0.12);
     contain: paint;
+}
+
+html.theme-dark .boot-loader__progress,
+body.dark-theme .boot-loader__progress {
+    background: rgba(208, 188, 255, 0.12);
 }
 
 .boot-loader__progress-bar {
@@ -199,17 +232,25 @@ body.dark-theme .boot-loader {
     width: 42%;
     border-radius: 999px;
     background: linear-gradient(90deg,
-        rgba(255, 255, 255, 0.2) 0%,
-        rgba(255, 255, 255, 0.95) 50%,
-        rgba(255, 255, 255, 0.2) 100%);
+        rgba(103, 80, 164, 0.25) 0%,
+        rgba(103, 80, 164, 0.85) 50%,
+        rgba(103, 80, 164, 0.25) 100%);
     animation: boot-loader-progress 1.45s ease-in-out infinite;
     will-change: transform;
     transform: translate3d(-110%, 0, 0) scaleX(0.35);
 }
 
-@keyframes boot-loader-pulse {
-    0%, 100% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.05); opacity: 0.85; }
+html.theme-dark .boot-loader__progress-bar,
+body.dark-theme .boot-loader__progress-bar {
+    background: linear-gradient(90deg,
+        rgba(208, 188, 255, 0.2) 0%,
+        rgba(208, 188, 255, 0.9) 50%,
+        rgba(208, 188, 255, 0.2) 100%);
+}
+
+@keyframes boot-loader-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-7px); }
 }
 
 @keyframes boot-loader-progress {
@@ -706,6 +747,42 @@ body.dark-theme .badge-weather { background: #E65100; color: #FFE0B2; }
     border-color: color-mix(in srgb, var(--md-sys-color-primary) 52%, transparent);
     box-shadow: 0 6px 18px rgba(103, 80, 164, 0.10);
     transform: translateX(2px);
+}
+
+/* 事件堆叠展开/收起 chip */
+.event-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.update-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+    cursor: pointer;
+    border: none;
+    font-family: inherit;
+    line-height: 1;
+    transition: opacity 0.15s, background 0.15s;
+    user-select: none;
+}
+
+.update-badge:hover {
+    opacity: 0.82;
+}
+
+.update-icon {
+    font-size: 9px;
+    opacity: 0.7;
+    line-height: 1;
 }
 
 .event-group-expanded {

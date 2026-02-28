@@ -277,6 +277,15 @@ class WebAdminServer:
                 # 获取所有预期的数据源
                 expected_sources = self._get_expected_data_sources()
 
+                # 数据源内部名称 -> 配置键的映射
+                source_config_key = {
+                    "fan_studio_all": "fan_studio",
+                    "p2p_main": "p2p_earthquake",
+                    "wolfx_all": "wolfx",
+                    "global_quake": "global_quake",
+                }
+                data_sources_config = self.config.get("data_sources", {})
+
                 # 合并：确保所有预期的数据源都显示，未连接的标记为 disconnected
                 merged_connections = {}
                 for source_name, display_name in expected_sources.items():
@@ -294,6 +303,12 @@ class WebAdminServer:
                             "has_handler": False,
                             "status": "未连接",
                         }
+
+                    # 注入是否启用标志
+                    cfg_key = source_config_key.get(source_name, source_name)
+                    conn_info["enabled"] = bool(
+                        data_sources_config.get(cfg_key, {}).get("enabled", False)
+                    )
 
                     # 注入延迟信息（从缓存中读取）
                     latency = self._latency_cache.get(source_name)

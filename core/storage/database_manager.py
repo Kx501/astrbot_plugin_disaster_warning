@@ -465,8 +465,13 @@ class DatabaseManager:
 
         for event in events:
             updates = updates_by_event.get(event["id"], [])
-            # 去掉最后一条（当前状态已在 events 主表），其余倒序排列（最新在前）
-            event["history"] = list(reversed(updates[:-1])) if len(updates) > 1 else []
+            # 只有 update_count > 1（即后端明确记录了多报次）时才返回历史条目
+            # 这样可以避免 weather/tsunami 事件因重推写入多条 event_updates 但 update_count=1
+            # 而在前端被错误地计入更新数量
+            if event.get("update_count", 1) > 1 and len(updates) > 1:
+                event["history"] = list(reversed(updates[:-1]))
+            else:
+                event["history"] = []
 
         return events
 

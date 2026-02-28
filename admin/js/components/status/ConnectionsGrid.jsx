@@ -42,11 +42,14 @@ function ConnectionsGrid() {
             const matchedEntries = Object.entries(connections).filter(([key]) => target.matcher(key));
             
             // 判断状态：未启用 | 在线 | 离线
+            // 优先以后端注入的 enabled 字段为准；若所有匹配项均未启用则视为 disabled
             let status = 'disabled';
             if (matchedEntries.length > 0) {
-                // 只要有一个匹配项连接成功，视为在线
-                const isConnected = matchedEntries.some(([, info]) => !!info.connected);
-                status = isConnected ? 'online' : 'offline';
+                const isEnabled = matchedEntries.some(([, info]) => !!info.enabled);
+                if (isEnabled) {
+                    const isConnected = matchedEntries.some(([, info]) => !!info.connected);
+                    status = isConnected ? 'online' : 'offline';
+                }
             }
             
             // 聚合重试次数 (取最大值)
