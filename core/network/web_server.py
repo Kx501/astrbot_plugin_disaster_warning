@@ -1159,6 +1159,13 @@ class WebAdminServer:
                 expected_sources = self._get_expected_data_sources()
 
                 # WebSocket推送时使用缓存的延迟数据，不执行ping
+                source_config_key = {
+                    "fan_studio_all": "fan_studio",
+                    "p2p_main": "p2p_earthquake",
+                    "wolfx_all": "wolfx",
+                    "global_quake": "global_quake",
+                }
+                data_sources_config = self.config.get("data_sources", {})
                 merged_connections = {}
                 for source_name, display_name in expected_sources.items():
                     conn_info = {}
@@ -1172,6 +1179,12 @@ class WebAdminServer:
                             "has_handler": False,
                             "status": "未连接",
                         }
+
+                    # 注入是否启用标志（与 /api/connections 保持一致）
+                    cfg_key = source_config_key.get(source_name, source_name)
+                    conn_info["enabled"] = bool(
+                        data_sources_config.get(cfg_key, {}).get("enabled", False)
+                    )
 
                     # 使用缓存的延迟信息
                     conn_info["latency"] = self._latency_cache.get(source_name)
