@@ -99,7 +99,7 @@ class DisasterWarningPlugin(Star):
 
             # 设置全局 asyncio 异常处理器（捕获未处理的 task 异常）
             if self.telemetry.enabled:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 # 保存原有的异常处理器
                 self._original_exception_handler = loop.get_exception_handler()
                 loop.set_exception_handler(self._handle_asyncio_exception)
@@ -206,6 +206,17 @@ class DisasterWarningPlugin(Star):
                         await self.disaster_service.message_manager.cleanup_browser()
                     except Exception as be:
                         logger.debug(f"[灾害预警] 浏览器清理时出错（已忽略）: {be}")
+                # 关闭气象过滤器复用的 HTTP session
+                try:
+                    await self.disaster_service.message_manager.weather_filter.close()
+                except Exception as wfe:
+                    logger.debug(f"[灾害预警] 气象过滤器 session 关闭时出错（已忽略）: {wfe}")
+
+            if self.disaster_service and self.disaster_service.statistics_manager:
+                try:
+                    await self.disaster_service.statistics_manager._weather_region_resolver.close()
+                except Exception as wfe:
+                    logger.debug(f"[灾害预警] 统计模块气象 session 关闭时出错（已忽略）: {wfe}")
 
             # 关闭遥测会话（best-effort，不影响主要关闭流程）
             if self.telemetry:

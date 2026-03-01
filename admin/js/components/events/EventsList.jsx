@@ -974,42 +974,34 @@ function EventsList() {
                                         padding: '24px',
                                         position: 'relative'
                                     }}>
-                                        {/* 顶部标题栏 */}
-                                        <div style={{
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            alignItems: 'center',
-                                            marginBottom: '24px',
-                                            paddingBottom: '16px',
-                                            borderBottom: '1px solid var(--md-sys-color-outline-variant)'
-                                        }}>
-                                            <div>
-                                                <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5 }}>
-                                                    {buildEarthquakeTitle(group.latestEvent)}
-                                                </Typography>
-                                                <Typography variant="body2" sx={{ opacity: 0.6 }}>
-                                                    📡 {formatSourceName(group.latestEvent.source)} · 共 {totalReports} 次更新
-                                                </Typography>
-                                            </div>
-                                            <button
-                                                onClick={() => toggleEventGroup(group.id)}
-                                                style={{
-                                                    background: 'var(--md-sys-color-surface-variant)',
-                                                    border: 'none',
-                                                    borderRadius: '8px',
-                                                    padding: '8px 16px',
-                                                    cursor: 'pointer',
-                                                    fontSize: '13px',
-                                                    fontWeight: 600,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '4px'
-                                                }}
-                                            >
+                                        {/* 顶部标题栏：整行可点击收起 */}
+                                        <button
+                                            onClick={() => toggleEventGroup(group.id)}
+                                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleEventGroup(group.id); } }}
+                                            aria-expanded={true}
+                                            style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                width: '100%',
+                                                marginBottom: '20px',
+                                                paddingBottom: '14px',
+                                                borderBottom: '1px solid var(--md-sys-color-outline-variant)',
+                                                cursor: 'pointer',
+                                                background: 'none',
+                                                border: 'none',
+                                                padding: '0 0 14px 0',
+                                                textAlign: 'left',
+                                            }}
+                                        >
+                                            <Typography variant="body2" sx={{ opacity: 0.55, fontSize: '12px' }}>
+                                                共 {totalReports} 次更新
+                                            </Typography>
+                                            <div className="update-badge">
                                                 <span>收起</span>
-                                                <span>▲</span>
-                                            </button>
-                                        </div>
+                                                <span className="update-icon">▲</span>
+                                            </div>
+                                        </button>
 
                                         {/* 时间线展示所有报 */}
                                         <div style={{ position: 'relative', paddingLeft: '40px' }}>

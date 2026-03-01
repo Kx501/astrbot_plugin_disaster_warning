@@ -55,6 +55,8 @@ const stripLeadingEmoji = (text) => {
  * @param {Function} props.onToggleExpand - 切换展开状态的回调
  */
 function ConfigField({ fieldKey, schema, value, onChange, depth = 0, path = '', expandedKeys = [], onToggleExpand = () => {} }) {
+    if (schema.hidden) return null;
+
     const [localValue, setLocalValue] = useState(value);
 
     useEffect(() => {
@@ -517,6 +519,7 @@ function ConfigRenderer() {
     const api = useApi();
     const scrollContainerRef = useRef(null);
     const loadConfigSeqRef = useRef(0);
+    const isDirtyRef = useRef(false); // 标记用户是否有未保存的修改
 
     // 动态缓存 key，避免全局与会话配置草稿互相覆盖
     const getDraftKey = (currentMode = mode, currentSession = selectedSession) => {
@@ -591,9 +594,9 @@ function ConfigRenderer() {
         };
     }, [loading, mode, selectedSession]);
 
-    // 自动保存草稿
+    // 自动保存草稿（仅在用户有修改时保存，避免覆盖外部更改）
     useEffect(() => {
-        if (config) {
+        if (config && isDirtyRef.current) {
             localStorage.setItem(getDraftKey(), JSON.stringify(config));
         }
     }, [config, mode, selectedSession]);
@@ -666,6 +669,7 @@ function ConfigRenderer() {
             // 1. 处理配置记忆 (草稿)
             // 会话模式以服务端 effective 为准，避免本地草稿造成会话间污染
             let finalConfig = configData;
+            let usedDraft = false;
             if (currentMode === 'global') {
                 const draftConfigStr = localStorage.getItem(getDraftKey(currentMode, currentSession));
                 if (draftConfigStr) {
@@ -674,6 +678,7 @@ function ConfigRenderer() {
                         // 简单校验：如果草稿是对象且不为空，则使用草稿
                         if (draftConfig && typeof draftConfig === 'object') {
                             finalConfig = draftConfig;
+                            usedDraft = true;
                             console.log('已恢复本地草稿配置');
                         }
                     } catch (e) {
@@ -681,6 +686,7 @@ function ConfigRenderer() {
                     }
                 }
             }
+            isDirtyRef.current = usedDraft;
 
             // 2. 处理展开状态记忆
             const cachedExpandedStr = localStorage.getItem(getExpandedKey(currentMode, currentSession));
@@ -769,8 +775,9 @@ function ConfigRenderer() {
             } else {
                 await api.updateConfig(cleanedConfig);
                 showToast('全局配置已保存', 'success');
+                isDirtyRef.current = false;
                 setConfig(cleanedConfig); // 全局模式可直接更新界面
-                localStorage.setItem(getDraftKey(currentMode, currentSession), JSON.stringify(cleanedConfig));
+                localStorage.removeItem(getDraftKey(currentMode, currentSession)); // 已保存，清除草稿
             }
         } catch (e) {
             console.error('保存配置失败', e);
@@ -905,7 +912,7 @@ function ConfigRenderer() {
                                 fieldKey={key}
                                 schema={subSchema}
                                 value={config[key]}
-                                onChange={(newValue) => setConfig({ ...config, [key]: newValue })}
+                                onChange={(newValue) => { isDirtyRef.current = true; setConfig({ ...config, [key]: newValue }); }}
                                 path=""
                                 expandedKeys={expandedKeys}
                                 onToggleExpand={handleToggleExpand}

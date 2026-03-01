@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import platform
+import secrets
 import traceback
 from datetime import datetime
 from typing import Any
@@ -65,6 +66,14 @@ def is_running_in_docker() -> bool:
 class WebAdminServer:
     """Web 管理端服务器"""
 
+    # 数据源内部名称 -> 配置键的映射（两处用到：/api/connections 和 _get_realtime_data）
+    _SOURCE_CONFIG_KEY: dict[str, str] = {
+        "fan_studio_all": "fan_studio",
+        "p2p_main": "p2p_earthquake",
+        "wolfx_all": "wolfx",
+        "global_quake": "global_quake",
+    }
+
     def __init__(self, disaster_service, config: dict[str, Any]):
         self.disaster_service = disaster_service
         self.config = config
@@ -75,6 +84,8 @@ class WebAdminServer:
         self._ping_task = None  # 新增：定期ping任务
         self._ws_connections: list[WebSocket] = []  # Active WebSocket connections
         self._latency_cache: dict[str, float | None] = {}  # 新增：延迟缓存
+        self._auth_enabled = False
+        self._auth_token: str | None = None
 
         if not FASTAPI_AVAILABLE:
             return
@@ -89,6 +100,33 @@ class WebAdminServer:
             description="灾害预警插件 Web 管理界面",
             version="1.0.0",
         )
+
+        # 鉴权配置
+        password = self.config.get("web_admin", {}).get("password", "")
+        if password:
+            self._auth_enabled = True
+            self._auth_token = secrets.token_hex(32)
+
+        # 鉴权中间件
+        @self.app.middleware("http")
+        async def auth_middleware(request: Request, call_next):
+            if not self._auth_enabled:
+                return await call_next(request)
+            path = request.url.path
+            # 不需要鉴权的路径
+            if path in {"/api/login", "/api/auth-info"}:
+                return await call_next(request)
+            # 只保护 /api/*（/ws 由 WebSocket 端点自行校验）
+            if not path.startswith("/api"):
+                return await call_next(request)
+            # WebSocket 和 API 均支持 token 查询参数或 Authorization 头
+            token = request.query_params.get("token", "")
+            if not token:
+                auth_header = request.headers.get("Authorization", "")
+                token = auth_header[7:] if auth_header.startswith("Bearer ") else ""
+            if not self._auth_token or not secrets.compare_digest(token, self._auth_token):
+                return JSONResponse({"error": "未授权，请先登录"}, status_code=401)
+            return await call_next(request)
 
         # CORS 配置
         self.app.add_middleware(
@@ -113,6 +151,21 @@ class WebAdminServer:
 
     def _register_routes(self):
         """注册 API 路由"""
+
+        @self.app.get("/api/auth-info")
+        async def get_auth_info():
+            """返回是否需要密码认证"""
+            return {"auth_required": self._auth_enabled}
+
+        @self.app.post("/api/login")
+        async def login(credentials: dict[str, Any]):
+            """密码登录，返回访问令牌"""
+            if not self._auth_enabled:
+                return {"token": "no-auth", "auth_required": False}
+            password = self.config.get("web_admin", {}).get("password", "")
+            if secrets.compare_digest(credentials.get("password", ""), password):
+                return {"token": self._auth_token, "auth_required": True}
+            return JSONResponse({"error": "密码错误"}, status_code=401)
 
         @self.app.get("/logo.png")
         async def get_logo():
@@ -277,6 +330,10 @@ class WebAdminServer:
                 # 获取所有预期的数据源
                 expected_sources = self._get_expected_data_sources()
 
+                # 数据源内部名称 -> 配置键的映射
+                source_config_key = self._SOURCE_CONFIG_KEY
+                data_sources_config = self.config.get("data_sources", {})
+
                 # 合并：确保所有预期的数据源都显示，未连接的标记为 disconnected
                 merged_connections = {}
                 for source_name, display_name in expected_sources.items():
@@ -294,6 +351,12 @@ class WebAdminServer:
                             "has_handler": False,
                             "status": "未连接",
                         }
+
+                    # 注入是否启用标志
+                    cfg_key = source_config_key.get(source_name, source_name)
+                    conn_info["enabled"] = bool(
+                        data_sources_config.get(cfg_key, {}).get("enabled", False)
+                    )
 
                     # 注入延迟信息（从缓存中读取）
                     latency = self._latency_cache.get(source_name)
@@ -346,7 +409,10 @@ class WebAdminServer:
                         ),
                     },
                     "display_timezone": self.config.get("display_timezone", "UTC+8"),
-                    "web_admin": self.config.get("web_admin", {}),
+                    "web_admin": {
+                        k: v for k, v in self.config.get("web_admin", {}).items()
+                        if k != "password"
+                    },
                 }
                 return config_summary
             except Exception as e:
@@ -834,8 +900,13 @@ class WebAdminServer:
         async def get_full_config():
             """获取完整配置"""
             try:
-                # 直接返回 Config 对象 (AstrBotConfig 实现了 dict 接口)
-                return dict(self.config)
+                full = dict(self.config)
+                # 剔除 web_admin.password，避免明文密码通过 API 泄露
+                if "web_admin" in full and isinstance(full["web_admin"], dict):
+                    full["web_admin"] = {
+                        k: v for k, v in full["web_admin"].items() if k != "password"
+                    }
+                return full
             except Exception as e:
                 logger.error(f"[灾害预警] 获取完整配置失败: {e}")
                 return JSONResponse({"error": str(e)}, status_code=500)
@@ -1005,6 +1076,16 @@ class WebAdminServer:
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
             """WebSocket 端点 - 实时数据推送"""
+            # 在 accept() 前校验 token，不合法则拒绝握手
+            if self._auth_enabled:
+                token = websocket.query_params.get("token", "")
+                if not token:
+                    token = websocket.headers.get("Authorization", "")
+                    token = token[7:] if token.startswith("Bearer ") else ""
+                if not self._auth_token or not secrets.compare_digest(token, self._auth_token):
+                    await websocket.close(code=1008)  # 1008 = Policy Violation
+                    return
+
             await websocket.accept()
             self._ws_connections.append(websocket)
             logger.info(
@@ -1144,6 +1225,8 @@ class WebAdminServer:
                 expected_sources = self._get_expected_data_sources()
 
                 # WebSocket推送时使用缓存的延迟数据，不执行ping
+                source_config_key = self._SOURCE_CONFIG_KEY
+                data_sources_config = self.config.get("data_sources", {})
                 merged_connections = {}
                 for source_name, display_name in expected_sources.items():
                     conn_info = {}
@@ -1157,6 +1240,12 @@ class WebAdminServer:
                             "has_handler": False,
                             "status": "未连接",
                         }
+
+                    # 注入是否启用标志（与 /api/connections 保持一致）
+                    cfg_key = source_config_key.get(source_name, source_name)
+                    conn_info["enabled"] = bool(
+                        data_sources_config.get(cfg_key, {}).get("enabled", False)
+                    )
 
                     # 使用缓存的延迟信息
                     conn_info["latency"] = self._latency_cache.get(source_name)
